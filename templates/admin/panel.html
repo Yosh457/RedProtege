@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Panel de Administración{% endblock %}
+{% from '_macros.html' import render_pagination %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto my-12 space-y-8 px-4 sm:px-0">
+
+    {# --- TARJETAS DE ESTADÍSTICAS --- #}
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="bg-white p-6 rounded-xl shadow-md border-l-4 border-blue-500">
+            <h3 class="text-gray-500 text-sm font-bold uppercase">Total Usuarios</h3>
+            <p class="text-3xl font-bold text-gray-800">{{ stats.total_usuarios }}</p>
+        </div>
+        <div class="bg-white p-6 rounded-xl shadow-md border-l-4 border-yellow-500">
+            <h3 class="text-gray-500 text-sm font-bold uppercase">Casos Pendientes</h3>
+            <p class="text-3xl font-bold text-gray-800">{{ stats.casos_pendientes }}</p>
+            <p class="text-xs text-gray-400">Requieren rescate</p>
+        </div>
+        <div class="bg-white p-6 rounded-xl shadow-md border-l-4 border-green-500">
+            <h3 class="text-gray-500 text-sm font-bold uppercase">Total Registros</h3>
+            <p class="text-3xl font-bold text-gray-800">{{ stats.total_casos }}</p>
+        </div>
+    </div>
+
+    {# --- TABLA DE USUARIOS --- #}
+    <div class="bg-white p-8 rounded-xl shadow-lg w-full">
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <div>
+                <h2 class="text-2xl font-bold text-gray-800">Gestión de Usuarios</h2>
+                <p class="text-gray-500 text-sm">Administración de cuentas y asignación de ciclos.</p>
+            </div>
+            <div class="flex gap-2">
+                <a href="{{ url_for('admin.ver_logs') }}" class="btn btn-secondary">Ver Logs</a>
+                <a href="{{ url_for('admin.crear_usuario') }}" class="btn btn-primary">Crear Usuario</a>
+            </div>
+        </div>
+
+        {# Formulario de Filtros (Igual a tu estándar) #}
+        <form method="get" action="{{ url_for('admin.panel') }}" class="bg-gray-50 p-4 rounded-lg mb-6 grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Buscar:</label>
+                <input type="text" name="busqueda" value="{{ busqueda }}" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Rol:</label>
+                <select name="rol_filtro" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                    <option value="">Todos</option>
+                    {% for rol in roles_para_filtro %}
+                        <option value="{{ rol.id }}" {% if rol.id == rol_filtro|int %}selected{% endif %}>{{ rol.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary w-full">Filtrar</button>
+        </form>
+
+        <div class="overflow-x-auto">
+            <table class="min-w-full bg-white">
+                <thead class="bg-gray-100">
+                    <tr>
+                        <th class="py-3 px-4 text-left text-sm font-semibold">Nombre</th>
+                        <th class="py-3 px-4 text-left text-sm font-semibold">Email</th>
+                        <th class="py-3 px-4 text-left text-sm font-semibold">Rol</th>
+                        <th class="py-3 px-4 text-left text-sm font-semibold">Ciclo Asignado</th>
+                        <th class="py-3 px-4 text-center text-sm font-semibold">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for usuario in pagination.items %}
+                    <tr class="border-b hover:bg-gray-50">
+                        <td class="py-3 px-4">{{ usuario.nombre_completo }}</td>
+                        <td class="py-3 px-4">{{ usuario.email }}</td>
+                        <td class="py-3 px-4">
+                            <span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">{{ usuario.rol.nombre }}</span>
+                        </td>
+                        <td class="py-3 px-4">
+                            {% if usuario.ciclo_asignado %}
+                                <span class="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded">{{ usuario.ciclo_asignado.nombre }}</span>
+                            {% else %}
+                                <span class="text-gray-400 text-xs italic">Global / Sin asignar</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-3 px-4 text-center flex justify-center gap-2">
+                            <a href="{{ url_for('admin.editar_usuario', id=usuario.id) }}" class="btn btn-secondary text-xs">Editar</a>
+                            <form action="{{ url_for('admin.toggle_activo', id=usuario.id) }}" method="POST">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                <button type="submit" class="btn {% if usuario.activo %}btn-warning{% else %}btn-primary{% endif %} text-xs">
+                                    {{ 'Desactivar' if usuario.activo else 'Activar' }}
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {{ render_pagination(pagination, 'admin.panel') }}
+    </div>
+</div>
+{% endblock %}

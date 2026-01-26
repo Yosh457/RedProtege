@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Establecer Nueva Contraseña{% endblock %}
+{% block content %}
+<div class="w-full max-w-md mx-auto pt-52 pb-12">
+<div class="bg-white p-8 rounded-xl shadow-lg w-full">
+    <h2 class="text-2xl font-bold text-center text-gray-800 mb-8">Establecer Nueva Contraseña</h2>
+    <form id="password-form" method="post" class="space-y-6">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <div>
+            <label for="nueva_password" class="block text-sm font-medium text-gray-700">Nueva Contraseña</label>
+            <div class="relative mt-1">
+                <input type="password" id="nueva_password" name="nueva_password" class="w-full px-4 py-2 border border-gray-300 rounded-lg" required>
+                <span id="toggle-password" class="absolute inset-y-0 right-0 pr-3 flex items-center cursor-pointer">
+                    <svg id="eye-icon" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                    <svg id="eye-slash-icon" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7 .946-3.11 3.563-5.556 6.848-6.675M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.75 4.75l14.5 14.5" /></svg>
+                </span>
+            </div>
+        </div>
+
+        <div id="password-criteria" class="text-sm space-y-1">
+            <p id="length-check" class="flex items-center text-red-500 transition-colors">
+                <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-10.293a1 1 0 00-1.414-1.414L9 9.586 7.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                Mínimo 8 caracteres
+            </p>
+            <p id="upper-check" class="flex items-center text-red-500 transition-colors">
+                <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-10.293a1 1 0 00-1.414-1.414L9 9.586 7.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                Al menos una letra mayúscula
+            </p>
+            <p id="number-check" class="flex items-center text-red-500 transition-colors">
+                <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-10.293a1 1 0 00-1.414-1.414L9 9.586 7.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                Al menos un número
+            </p>
+            <p id="match-check" class="flex items-center text-red-500 transition-colors">
+                <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-10.293a1 1 0 00-1.414-1.414L9 9.586 7.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                Las contraseñas coinciden
+            </p>
+        </div>
+
+        <div>
+            <label for="confirmar_password" class="block text-sm font-medium text-gray-700">Confirmar Nueva Contraseña</label>
+            <input type="password" id="confirmar_password" name="confirmar_password" class="mt-1 w-full px-4 py-2 border border-gray-300 rounded-lg" required>
+        </div>
+        <div class="text-center">
+            <button type="submit" id="submit-btn" class="w-full btn btn-primary disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                Actualizar Contraseña
+            </button>
+        </div>
+    </form>
+</div>
+</div>
+<script src="{{ url_for('static', filename='js/validation.js') }}"></script>
+{% endblock %}

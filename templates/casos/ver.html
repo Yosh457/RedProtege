@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Detalle Caso{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto my-12 bg-white p-8 rounded-xl shadow-lg">
+    <div class="flex justify-between items-start border-b pb-6 mb-6">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-800">Caso #{{ caso.id }}</h1>
+            <p class="text-gray-500">{{ caso.origen_nombres }} {{ caso.origen_apellidos }}</p>
+        </div>
+        <a href="{{ url_for('casos.index') }}" class="btn btn-secondary">Volver</a>
+    </div>
+    
+    <div class="grid grid-cols-2 gap-8">
+        <div>
+            <h3 class="font-bold text-lg mb-4 text-blue-700">Datos de Origen</h3>
+            <p><strong>RUT:</strong> {{ caso.origen_rut }}</p>
+            <p><strong>Relato:</strong> {{ caso.origen_relato }}</p>
+        </div>
+        <div>
+            <h3 class="font-bold text-lg mb-4 text-green-700">Estado Actual</h3>
+            <p><strong>Ciclo:</strong> {{ caso.ciclo_vital.nombre }}</p>
+            <p><strong>Estado:</strong> {{ caso.estado }}</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

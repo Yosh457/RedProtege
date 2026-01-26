@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Logs de Auditoría{% endblock %}
+{% from '_macros.html' import render_pagination %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto my-12 bg-white p-8 rounded-xl shadow-lg">
+    
+    <div class="flex justify-between items-center mb-8 border-b pb-4">
+        <div>
+            <h2 class="text-2xl font-bold text-gray-800">Logs de Auditoría</h2>
+            <p class="text-gray-500 text-sm">Registro histórico de movimientos del sistema.</p>
+        </div>
+        <a href="{{ url_for('admin.panel') }}" class="btn btn-secondary">
+            &larr; Volver al Panel
+        </a>
+    </div>
+
+    <form method="get" action="{{ url_for('admin.ver_logs') }}" class="bg-gray-50 p-6 rounded-lg mb-8 grid grid-cols-1 md:grid-cols-3 gap-6 items-end border border-gray-200">
+        
+        <div>
+            <label for="filtro_usuario" class="block text-xs font-bold text-gray-500 uppercase mb-1">Filtrar por Usuario</label>
+            <select name="usuario_id" id="filtro_usuario" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-white">
+                <option value="">Todos los usuarios</option>
+                {% for user in todos_los_usuarios %}
+                    <option value="{{ user.id }}" {% if filtros.usuario_id and user.id == filtros.usuario_id|int %}selected{% endif %}>
+                        {{ user.nombre_completo }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div>
+            <label for="filtro_accion" class="block text-xs font-bold text-gray-500 uppercase mb-1">Filtrar por Acción</label>
+            <select name="accion" id="filtro_accion" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-white">
+                <option value="">Todas las acciones</option>
+                {% for accion in acciones_posibles %}
+                    <option value="{{ accion }}" {% if accion == filtros.accion %}selected{% endif %}>
+                        {{ accion }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="flex gap-2">
+            <a href="{{ url_for('admin.ver_logs') }}" class="w-1/2 px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg text-center hover:bg-gray-300 transition">Limpiar</a>
+            <button type="submit" class="w-1/2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition">Filtrar</button>
+        </div>
+    </form>
+
+    <div class="overflow-x-auto rounded-lg border border-gray-200">
+        <table class="min-w-full bg-white">
+            <thead class="bg-gray-100 border-b border-gray-200">
+                <tr>
+                    <th class="text-left py-3 px-6 font-bold text-xs text-gray-500 uppercase tracking-wider">Fecha y Hora</th>
+                    <th class="text-left py-3 px-6 font-bold text-xs text-gray-500 uppercase tracking-wider">Usuario</th>
+                    <th class="text-left py-3 px-6 font-bold text-xs text-gray-500 uppercase tracking-wider">Acción</th>
+                    <th class="text-left py-3 px-6 font-bold text-xs text-gray-500 uppercase tracking-wider">Detalles</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200">
+                {% for log in pagination.items %}
+                <tr class="hover:bg-gray-50 transition">
+                    <td class="py-4 px-6 text-sm text-gray-600 font-medium whitespace-nowrap">
+                        {{ log.timestamp.strftime('%d-%m-%Y %H:%M:%S') }}
+                    </td> 
+                    <td class="py-4 px-6 text-sm text-gray-900 font-semibold">
+                        {{ log.usuario_nombre or 'Sistema' }}
+                    </td>
+                    <td class="py-4 px-6 text-sm">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            {{ log.accion }}
+                        </span>
+                    </td>
+                    <td class="py-4 px-6 text-sm text-gray-600">
+                        {{ log.detalles }}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="4" class="text-center py-10 text-gray-500 bg-gray-50">
+                        No hay registros de actividad que coincidan con los filtros.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {{ render_pagination(pagination, 'admin.ver_logs') }}
+</div>
+{% endblock %}
