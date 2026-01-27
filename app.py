@@ -50,6 +50,10 @@ def create_app():
     from blueprints.casos import casos_bp
     app.register_blueprint(casos_bp)
 
+    # Blueprint Formulario Público
+    from blueprints.publico import publico_bp
+    app.register_blueprint(publico_bp)
+
     @app.route('/')
     def index():
         # Redirigir al login por ahora

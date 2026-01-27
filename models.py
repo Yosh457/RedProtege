@@ -10,6 +10,13 @@ def obtener_hora_chile():
     cl_tz = pytz.timezone('America/Santiago')
     return datetime.now(cl_tz)
 
+# --- TABLA DE ASOCIACIÓN (MANY-TO-MANY) ---
+# Tabla puente para relacionar Casos con múltiples Vulneraciones
+caso_vulneraciones = db.Table('caso_vulneraciones',
+    db.Column('caso_id', db.Integer, db.ForeignKey('casos.id'), primary_key=True),
+    db.Column('vulneracion_id', db.Integer, db.ForeignKey('catalogo_vulneraciones.id'), primary_key=True)
+)
+
 # --- CATÁLOGOS ---
 
 class Rol(db.Model):
@@ -26,6 +33,27 @@ class CatalogoCiclo(db.Model):
     usuarios = db.relationship('Usuario', back_populates='ciclo_asignado')
     casos = db.relationship('Caso', back_populates='ciclo_vital')
 
+class CatalogoRecinto(db.Model):
+    __tablename__ = 'catalogo_recintos'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(100), nullable=False, unique=True)
+    activo = db.Column(db.Boolean, default=True)
+    casos = db.relationship('Caso', back_populates='recinto_notifica')
+
+class CatalogoVulneracion(db.Model):
+    __tablename__ = 'catalogo_vulneraciones'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(100), nullable=False, unique=True)
+    activo = db.Column(db.Boolean, default=True)
+    casos = db.relationship('Caso', secondary=caso_vulneraciones, back_populates='vulneraciones')
+
+class CatalogoInstitucion(db.Model):
+    __tablename__ = 'catalogo_instituciones'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(100), nullable=False, unique=True)
+    activo = db.Column(db.Boolean, default=True)
+    casos = db.relationship('Caso', back_populates='denuncia_institucion')
+
 # --- USUARIOS & SISTEMA ---
 
 class Usuario(db.Model, UserMixin):
@@ -41,7 +69,6 @@ class Usuario(db.Model, UserMixin):
     reset_token = db.Column(db.String(32), nullable=True)
     reset_token_expiracion = db.Column(db.DateTime, nullable=True)
 
-    # Relaciones e Índices
     rol_id = db.Column(db.Integer, db.ForeignKey('roles.id'), index=True)
     rol = db.relationship('Rol', back_populates='usuarios')
     
@@ -69,31 +96,70 @@ class Caso(db.Model):
     __tablename__ = 'casos'
     id = db.Column(db.Integer, primary_key=True)
     
-    # Origen (Inmutable)
+    # --- A) ANTECEDENTES / ATENCIÓN ---
+    fecha_atencion = db.Column(db.Date, index=True)
+    hora_atencion = db.Column(db.Time)
+    
+    recinto_notifica_id = db.Column(db.Integer, db.ForeignKey('catalogo_recintos.id'), index=True)
+    recinto_notifica = db.relationship('CatalogoRecinto', back_populates='casos')
+    recinto_otro_texto = db.Column(db.String(255))
+    
+    vulneraciones = db.relationship('CatalogoVulneracion', secondary=caso_vulneraciones, back_populates='casos')
+    vulneracion_otro_texto = db.Column(db.Text)
+    
+    folio_atencion = db.Column(db.String(50))
+    ingresado_por_nombre = db.Column(db.String(100))
+    ingresado_por_cargo = db.Column(db.String(100))
+
+    # --- B) DATOS PACIENTE ---
+    # Nota: origen_rut ahora es nullable, se mantiene por compatibilidad legacy si es necesario
+    origen_rut = db.Column(db.String(20), nullable=True, index=True) 
+    
+    # Los campos 'origen_' obligatorios se llenarán con los datos del form para cumplir el NOT NULL
     origen_nombres = db.Column(db.String(100), nullable=False)
     origen_apellidos = db.Column(db.String(100), nullable=False)
-    origen_rut = db.Column(db.String(20), nullable=False, index=True)
     origen_telefono = db.Column(db.String(20))
-    origen_fecha_nacimiento = db.Column(db.Date)
+    origen_fecha_nacimiento = db.Column(db.Date) # Legacy
     origen_relato = db.Column(db.Text, nullable=False)
     
-    # Trazabilidad
+    # Campos Nuevos Específicos
+    paciente_doc_tipo = db.Column(db.Enum('RUT','DNI','NIP','OTRO'), default='RUT')
+    paciente_doc_numero = db.Column(db.String(50)) 
+    paciente_doc_otro_descripcion = db.Column(db.String(100))
+    paciente_fecha_nacimiento = db.Column(db.Date) # Nueva columna principal
+    paciente_domicilio = db.Column(db.Text)
+
+    # --- C) DATOS ACOMPAÑANTE ---
+    acompanante_nombre = db.Column(db.String(100))
+    acompanante_parentesco = db.Column(db.String(50))
+    acompanante_telefono = db.Column(db.String(20))
+    acompanante_telefono_tipo = db.Column(db.Enum('CELULAR','FIJO','OTRO'))
+    acompanante_doc_tipo = db.Column(db.Enum('RUT','DNI','NIP','OTRO'))
+    acompanante_doc_numero = db.Column(db.String(50))
+    acompanante_doc_otro_descripcion = db.Column(db.String(100))
+    acompanante_domicilio = db.Column(db.Text)
+
+    # --- D) DENUNCIA ---
+    denuncia_realizada = db.Column(db.Boolean, default=False)
+    denuncia_institucion_id = db.Column(db.Integer, db.ForeignKey('catalogo_instituciones.id'))
+    denuncia_institucion = db.relationship('CatalogoInstitucion', back_populates='casos')
+    denuncia_institucion_otro = db.Column(db.String(100))
+    denuncia_profesional_nombre = db.Column(db.String(100))
+    denuncia_profesional_cargo = db.Column(db.String(100))
+
+    # --- TRAZABILIDAD & GESTIÓN ---
     fecha_ingreso = db.Column(db.DateTime, default=obtener_hora_chile)
     updated_at = db.Column(db.DateTime, default=obtener_hora_chile, onupdate=obtener_hora_chile)
 
-    # Clasificación
-    ciclo_vital_id = db.Column(db.Integer, db.ForeignKey('catalogo_ciclos.id'), nullable=False)
+    ciclo_vital_id = db.Column(db.Integer, db.ForeignKey('catalogo_ciclos.id'), nullable=False) # Índice ya existe via FK o explícito
     ciclo_vital = db.relationship('CatalogoCiclo', back_populates='casos')
 
-    # Gestión
     observaciones_gestion = db.Column(db.Text)
     acciones_realizadas = db.Column(db.Text)
 
-    # Estados
     estado = db.Column(db.Enum('PENDIENTE_RESCATAR', 'EN_SEGUIMIENTO', 'CERRADO'), 
                        default='PENDIENTE_RESCATAR', nullable=False)
     
-    # Bloqueo
     bloqueado = db.Column(db.Boolean, default=False)
     bloqueado_at = db.Column(db.DateTime)
     bloqueado_por = db.Column(db.Integer, db.ForeignKey('usuarios.id'))
@@ -102,6 +168,11 @@ class Caso(db.Model):
     usuario_cierre_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'))
 
     auditorias = db.relationship('AuditoriaCaso', back_populates='caso', cascade="all, delete-orphan")
+
+    # Índice compuesto para dashboard (Solicitado)
+    __table_args__ = (
+        db.Index('idx_casos_ciclo_estado', 'ciclo_vital_id', 'estado'),
+    )
 
 class AuditoriaCaso(db.Model):
     __tablename__ = 'auditoria_casos'
