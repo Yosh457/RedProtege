@@ -1,26 +1,335 @@
 {% extends "base.html" %}
-{% block title %}Detalle Caso{% endblock %}
+{% block title %}Caso #{{ caso.id }} - RedProtege{% endblock %}
+
 {% block content %}
-<div class="max-w-5xl mx-auto my-12 bg-white p-8 rounded-xl shadow-lg">
-    <div class="flex justify-between items-start border-b pb-6 mb-6">
+<div class="max-w-7xl mx-auto my-8 px-4">
+
+    {# --- CABECERA Y ESTADO --- #}
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
-            <h1 class="text-3xl font-bold text-gray-800">Caso #{{ caso.id }}</h1>
-            <p class="text-gray-500">{{ caso.origen_nombres }} {{ caso.origen_apellidos }}</p>
+            <div class="flex items-center gap-3 flex-wrap">
+                <h1 class="text-3xl font-bold text-gray-800">
+                    Caso #{{ caso.folio_atencion if caso.folio_atencion else caso.id }}
+                </h1>
+
+                <span class="px-3 py-1 rounded-full text-sm font-bold
+                    {% if caso.estado == 'PENDIENTE_RESCATAR' %}bg-yellow-100 text-yellow-800
+                    {% elif caso.estado == 'EN_SEGUIMIENTO' %}bg-blue-100 text-blue-800
+                    {% else %}bg-green-100 text-green-800{% endif %}">
+                    {% if caso.estado == 'PENDIENTE_RESCATAR' %}Pendiente rescatar
+                    {% elif caso.estado == 'EN_SEGUIMIENTO' %}En seguimiento
+                    {% else %}Cerrado{% endif %}
+                </span>
+
+                {% if caso.asignado_a %}
+                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800">
+                        Asignado: {{ caso.asignado_a.nombre_completo }}
+                    </span>
+                {% else %}
+                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-700">
+                        Sin asignar
+                    </span>
+                {% endif %}
+            </div>
+
+            <p class="text-gray-500 mt-1">
+                Ingresado el
+                <strong>
+                    {{ caso.fecha_ingreso.strftime('%d/%m/%Y %H:%M') if caso.fecha_ingreso else '-' }}
+                </strong>
+                {% if caso.ingresado_por_nombre %}
+                    por <strong>{{ caso.ingresado_por_nombre }}</strong>
+                {% endif %}
+            </p>
         </div>
-        <a href="{{ url_for('casos.index') }}" class="btn btn-secondary">Volver</a>
+
+        <a href="{{ url_for('casos.index') }}" class="btn btn-secondary">Volver a la Bandeja</a>
     </div>
-    
-    <div class="grid grid-cols-2 gap-8">
-        <div>
-            <h3 class="font-bold text-lg mb-4 text-blue-700">Datos de Origen</h3>
-            <p><strong>RUT:</strong> {{ caso.origen_rut }}</p>
-            <p><strong>Relato:</strong> {{ caso.origen_relato }}</p>
+
+    {# --- BLOQUE DE ASIGNACIÓN (Solo Admin/Referente) --- #}
+    {% if current_user.rol and current_user.rol.nombre in ['Admin', 'Referente'] %}
+    <div class="bg-blue-50 border border-blue-200 rounded-xl p-6 mb-8 shadow-sm">
+        <h3 class="text-lg font-bold text-blue-800 mb-4 flex items-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z">
+                </path>
+            </svg>
+            Asignación de Profesional
+        </h3>
+
+        <form method="post" class="flex flex-col md:flex-row gap-4 items-end">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <input type="hidden" name="asignar_funcionario" value="1"/>
+
+            <div class="w-full md:w-1/2">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Funcionario Encargado</label>
+                <select name="funcionario_id" class="w-full rounded-lg border-gray-300" required>
+                    <option value="">Seleccione Funcionario...</option>
+                    {% for f in funcionarios %}
+                        <option value="{{ f.id }}" {% if caso.asignado_a_usuario_id == f.id %}selected{% endif %}>
+                            {{ f.nombre_completo }}
+                        </option>
+                    {% endfor %}
+                </select>
+                <p class="text-xs text-gray-500 mt-1">
+                    Solo se listan funcionarios activos y compatibles con el ciclo (según reglas del sistema).
+                </p>
+            </div>
+
+            <button type="submit" class="btn btn-primary">
+                {{ 'Reasignar' if caso.asignado_a_usuario_id else 'Asignar Caso' }}
+            </button>
+        </form>
+
+        {% if caso.asignado_a and caso.asignado_por and caso.asignado_at %}
+            <p class="text-xs text-blue-700 mt-3">
+                Actualmente asignado a: <strong>{{ caso.asignado_a.nombre_completo }}</strong>
+                (por <strong>{{ caso.asignado_por.nombre_completo }}</strong>
+                el <strong>{{ caso.asignado_at.strftime('%d/%m %H:%M') }}</strong>)
+            </p>
+        {% elif caso.asignado_a %}
+            <p class="text-xs text-blue-700 mt-3">
+                Actualmente asignado a: <strong>{{ caso.asignado_a.nombre_completo }}</strong>
+            </p>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+        {# --- COLUMNA IZQUIERDA: DATOS INMUTABLES (Form público) --- #}
+        <div class="lg:col-span-2 space-y-6">
+
+            <div class="bg-white p-6 rounded-xl shadow border-l-4 border-green-500">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Datos del Paciente (Inmutables)</h3>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <span class="block text-gray-500 text-xs">Nombre Completo</span>
+                        <span class="font-medium text-gray-900">
+                            {{ caso.origen_nombres }} {{ caso.origen_apellidos }}
+                        </span>
+                    </div>
+
+                    <div>
+                        <span class="block text-gray-500 text-xs">Identificación</span>
+                        <span class="font-medium text-gray-900">
+                            {% if caso.paciente_doc_tipo and caso.paciente_doc_numero %}
+                                {{ caso.paciente_doc_tipo }}: {{ caso.paciente_doc_numero }}
+                            {% elif caso.origen_rut %}
+                                RUT: {{ caso.origen_rut }}
+                            {% else %}
+                                <span class="text-gray-400 italic">No informada</span>
+                            {% endif %}
+                        </span>
+                    </div>
+
+                    <div>
+                        <span class="block text-gray-500 text-xs">Fecha Nacimiento</span>
+                        <span class="font-medium text-gray-900">
+                            {{ caso.paciente_fecha_nacimiento.strftime('%d-%m-%Y') if caso.paciente_fecha_nacimiento else 'No informada' }}
+                        </span>
+                    </div>
+
+                    <div>
+                        <span class="block text-gray-500 text-xs">Ciclo Vital</span>
+                        <span class="font-medium text-gray-900">
+                            {{ caso.ciclo_vital.nombre if caso.ciclo_vital else '-' }}
+                        </span>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <span class="block text-gray-500 text-xs">Domicilio</span>
+                        <span class="font-medium text-gray-900">
+                            {% if caso.paciente_direccion_calle %}
+                                {{ caso.paciente_direccion_calle }}
+                                {% if caso.paciente_direccion_numero %} #{{ caso.paciente_direccion_numero }}{% endif %}
+                            {% else %}
+                                {{ caso.paciente_domicilio if caso.paciente_domicilio else '-' }}
+                            {% endif %}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-xl shadow border-l-4 border-gray-500">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Relato del Caso (Inmutable)</h3>
+
+                <div class="bg-gray-50 p-4 rounded-lg text-gray-700 text-sm italic">
+                    "{{ caso.origen_relato if caso.origen_relato else '' }}"
+                </div>
+
+                <div class="mt-4">
+                    <span class="block text-gray-500 text-xs mb-1">Vulneraciones reportadas:</span>
+
+                    <div class="flex flex-wrap gap-2">
+                        {% for v in caso.vulneraciones %}
+                            <span class="px-2 py-1 bg-red-100 text-red-800 text-xs rounded-md font-bold">
+                                {{ v.nombre }}
+                            </span>
+                        {% endfor %}
+
+                        {% if caso.vulneracion_otro_texto %}
+                            <span class="px-2 py-1 bg-red-50 text-red-800 text-xs rounded-md font-bold">
+                                Otro: {{ caso.vulneracion_otro_texto }}
+                            </span>
+                        {% endif %}
+
+                        {% if (caso.vulneraciones|length == 0) and not caso.vulneracion_otro_texto %}
+                            <span class="text-gray-400 text-xs italic">No informadas</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-xl shadow border-l-4 border-yellow-500">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Datos del Acompañante (Inmutables)</h3>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <span class="block text-gray-500 text-xs">Nombre</span>
+                        <span class="font-medium text-gray-900">
+                            {{ caso.acompanante_nombre if caso.acompanante_nombre else '-' }}
+                        </span>
+                    </div>
+
+                    <div>
+                        <span class="block text-gray-500 text-xs">Parentesco</span>
+                        <span class="font-medium text-gray-900">
+                            {{ caso.acompanante_parentesco if caso.acompanante_parentesco else '-' }}
+                        </span>
+                    </div>
+
+                    <div>
+                        <span class="block text-gray-500 text-xs">Teléfono</span>
+                        <span class="font-medium text-gray-900">
+                            {{ caso.acompanante_telefono if caso.acompanante_telefono else '-' }}
+                            {% if caso.acompanante_telefono_tipo %}
+                                <span class="text-gray-400 text-xs">({{ caso.acompanante_telefono_tipo }})</span>
+                            {% endif %}
+                        </span>
+                    </div>
+
+                    <div>
+                        <span class="block text-gray-500 text-xs">Identificación</span>
+                        <span class="font-medium text-gray-900">
+                            {% if caso.acompanante_doc_tipo and caso.acompanante_doc_numero %}
+                                {{ caso.acompanante_doc_tipo }}: {{ caso.acompanante_doc_numero }}
+                                {% if caso.acompanante_doc_tipo == 'OTRO' and caso.acompanante_doc_otro_descripcion %}
+                                    <span class="text-gray-500 text-xs">({{ caso.acompanante_doc_otro_descripcion }})</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-gray-400 italic">No informada</span>
+                            {% endif %}
+                        </span>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <span class="block text-gray-500 text-xs">Domicilio</span>
+                        <span class="font-medium text-gray-900">
+                            {% if caso.acompanante_direccion_calle %}
+                                {{ caso.acompanante_direccion_calle }}
+                                {% if caso.acompanante_direccion_numero %} #{{ caso.acompanante_direccion_numero }}{% endif %}
+                            {% else %}
+                                {{ caso.acompanante_domicilio if caso.acompanante_domicilio else '-' }}
+                            {% endif %}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-xl shadow border-l-4 border-red-600">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Denuncia (Inmutable)</h3>
+
+                <div class="text-sm">
+                    <p>
+                        <span class="text-gray-500 text-xs">¿Se realizó denuncia?</span><br>
+                        <span class="font-medium text-gray-900">
+                            {{ 'Sí' if caso.denuncia_realizada else 'No' }}
+                        </span>
+                    </p>
+
+                    {% if caso.denuncia_realizada %}
+                        <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <span class="block text-gray-500 text-xs">Institución</span>
+                                <span class="font-medium text-gray-900">
+                                    {% if caso.denuncia_institucion %}
+                                        {{ caso.denuncia_institucion.nombre }}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                    {% if caso.denuncia_institucion_otro %}
+                                        <span class="text-gray-500 text-xs">(Otro: {{ caso.denuncia_institucion_otro }})</span>
+                                    {% endif %}
+                                </span>
+                            </div>
+                            <div>
+                                <span class="block text-gray-500 text-xs">Profesional</span>
+                                <span class="font-medium text-gray-900">
+                                    {{ caso.denuncia_profesional_nombre if caso.denuncia_profesional_nombre else '-' }}
+                                    {% if caso.denuncia_profesional_cargo %}
+                                        <span class="text-gray-500 text-xs">({{ caso.denuncia_profesional_cargo }})</span>
+                                    {% endif %}
+                                </span>
+                            </div>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+
         </div>
-        <div>
-            <h3 class="font-bold text-lg mb-4 text-green-700">Estado Actual</h3>
-            <p><strong>Ciclo:</strong> {{ caso.ciclo_vital.nombre }}</p>
-            <p><strong>Estado:</strong> {{ caso.estado }}</p>
+
+        {# --- COLUMNA DERECHA: GESTIÓN (Editable para Admin o Funcionario asignado) --- #}
+        <div class="space-y-6">
+            <div class="bg-white p-6 rounded-xl shadow border-t-4 border-blue-600">
+                <h3 class="text-lg font-bold text-gray-800 mb-4">Gestión del Caso</h3>
+
+                {% set rol = (current_user.rol.nombre if current_user.rol else '') %}
+                {% set puede_gestionar = (rol == 'Admin') or (rol == 'Funcionario' and caso.asignado_a_usuario_id == current_user.id) %}
+
+                {% if puede_gestionar %}
+                    <div class="bg-blue-50 border border-blue-100 rounded-lg p-4 text-sm text-blue-800">
+                        Puedes gestionar este caso. Los datos del formulario público son inmutables.
+                    </div>
+
+                    <div class="text-center py-4">
+                        {# En Fase 4 esto debe ser un POST real #}
+                        <button type="button" class="btn btn-primary w-full mb-2">Ingresar Gestión</button>
+                        <button type="button" class="btn btn-secondary w-full">Cerrar Caso</button>
+                    </div>
+                {% else %}
+                    <div class="bg-yellow-50 p-4 rounded text-yellow-800 text-sm text-center">
+                        <p>Este caso es de solo lectura para tu perfil.</p>
+                        {% if rol == 'Funcionario' %}
+                            <p class="mt-1 text-xs">Solo el funcionario asignado puede gestionarlo.</p>
+                        {% endif %}
+                    </div>
+                {% endif %}
+
+                <div class="mt-6 border-t pt-4">
+                    <h4 class="font-bold text-sm text-gray-700 mb-2">Historial (últimos movimientos)</h4>
+
+                    {% set ultimos = caso.auditorias[-5:] if caso.auditorias else [] %}
+                    {% if ultimos %}
+                        <ul class="text-xs text-gray-500 space-y-2">
+                            {% for audit in ultimos|reverse %}
+                            <li class="border-b pb-1">
+                                <span class="font-bold">{{ audit.accion }}</span>
+                                {% if audit.usuario %}por {{ audit.usuario.nombre_completo }}{% endif %}
+                                <br>
+                                {{ audit.fecha_movimiento.strftime('%d/%m %H:%M') if audit.fecha_movimiento else '-' }}
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        <p class="text-xs text-gray-400 italic">Sin movimientos registrados.</p>
+                    {% endif %}
+                </div>
+            </div>
         </div>
+
     </div>
 </div>
 {% endblock %}

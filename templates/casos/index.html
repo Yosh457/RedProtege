@@ -8,7 +8,9 @@
         <div class="p-6 border-b flex justify-between items-center bg-gray-50">
             <div>
                 <h2 class="text-2xl font-bold text-gray-800">Bandeja de Casos</h2>
-                <p class="text-sm text-gray-500">Filtrado por: <span class="font-bold text-blue-600">{{ nombre_filtro }}</span></p>
+                <p class="text-sm text-gray-500">
+                    Filtrado por: <span class="font-bold text-blue-600">{{ nombre_filtro }}</span>
+                </p>
             </div>
             {# Aquí irá el buscador luego #}
         </div>
@@ -17,9 +19,10 @@
             <thead class="bg-gray-100">
                 <tr>
                     <th class="py-3 px-4 text-left text-sm font-semibold">Fecha Ingreso</th>
-                    <th class="py-3 px-4 text-left text-sm font-semibold">RUT</th>
-                    <th class="py-3 px-4 text-left text-sm font-semibold">Nombres</th>
+                    <th class="py-3 px-4 text-left text-sm font-semibold">Documento</th>
+                    <th class="py-3 px-4 text-left text-sm font-semibold">Paciente</th>
                     <th class="py-3 px-4 text-left text-sm font-semibold">Ciclo</th>
+                    <th class="py-3 px-4 text-left text-sm font-semibold">Asignado a</th>
                     <th class="py-3 px-4 text-center text-sm font-semibold">Estado</th>
                     <th class="py-3 px-4 text-center text-sm font-semibold">Acciones</th>
                 </tr>
@@ -27,31 +30,67 @@
             <tbody>
                 {% for caso in pagination.items %}
                 <tr class="border-b hover:bg-gray-50">
-                    <td class="py-3 px-4">{{ caso.fecha_ingreso.strftime('%d-%m-%Y %H:%M') }}</td>
-                    <td class="py-3 px-4 font-mono">{{ caso.origen_rut }}</td>
-                    <td class="py-3 px-4">{{ caso.origen_nombres }} {{ caso.origen_apellidos }}</td>
                     <td class="py-3 px-4">
-                        <span class="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded">{{ caso.ciclo_vital.nombre }}</span>
+                        {{ caso.fecha_ingreso.strftime('%d-%m-%Y %H:%M') if caso.fecha_ingreso else '-' }}
                     </td>
+
+                    <td class="py-3 px-4 font-mono">
+                        {% if caso.paciente_doc_tipo and caso.paciente_doc_numero %}
+                            {{ caso.paciente_doc_tipo }}: {{ caso.paciente_doc_numero }}
+                        {% elif caso.origen_rut %}
+                            RUT: {{ caso.origen_rut }}
+                        {% else %}
+                            <span class="text-gray-400 text-xs italic">Sin ID</span>
+                        {% endif %}
+                    </td>
+
+                    <td class="py-3 px-4">
+                        {{ caso.origen_nombres }} {{ caso.origen_apellidos }}
+                    </td>
+
+                    <td class="py-3 px-4">
+                        <span class="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded">
+                            {{ caso.ciclo_vital.nombre }}
+                        </span>
+                    </td>
+
+                    <td class="py-3 px-4">
+                        {% if caso.asignado_a %}
+                            <span class="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
+                                {{ caso.asignado_a.nombre_completo }}
+                            </span>
+                        {% else %}
+                            <span class="text-gray-400 text-xs italic">Sin asignar</span>
+                        {% endif %}
+                    </td>
+
                     <td class="py-3 px-4 text-center">
                         <span class="px-2 py-1 rounded text-xs font-bold
                             {% if caso.estado == 'PENDIENTE_RESCATAR' %}bg-yellow-100 text-yellow-800
                             {% elif caso.estado == 'EN_SEGUIMIENTO' %}bg-blue-100 text-blue-800
                             {% else %}bg-gray-200 text-gray-800{% endif %}">
-                            {{ caso.estado }}
+                            {% if caso.estado == 'PENDIENTE_RESCATAR' %}Pendiente rescatar
+                            {% elif caso.estado == 'EN_SEGUIMIENTO' %}En seguimiento
+                            {% else %}Cerrado{% endif %}
                         </span>
                     </td>
+
                     <td class="py-3 px-4 text-center">
-                        <a href="{{ url_for('casos.ver_caso', id=caso.id) }}" class="btn btn-primary text-xs">Ver Caso</a>
+                        <a href="{{ url_for('casos.ver_caso', id=caso.id) }}" class="btn btn-primary text-xs">
+                            Ver Caso
+                        </a>
                     </td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="6" class="text-center py-8 text-gray-500">No hay casos registrados en este ciclo.</td>
+                    <td colspan="7" class="text-center py-8 text-gray-500">
+                        No hay casos registrados en esta vista.
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
+
         {{ render_pagination(pagination, 'casos.index') }}
     </div>
 </div>

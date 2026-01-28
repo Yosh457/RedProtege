@@ -145,9 +145,15 @@
                     </div>
                 </div>
 
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700">Domicilio / Dirección *</label>
-                    <textarea name="paciente_domicilio" rows="2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required></textarea>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700">Calle / Pasaje / Avenida *</label>
+                        <input type="text" name="paciente_calle" value="{{ datos.paciente_calle if datos else '' }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required placeholder="Ej: Av. Los Aromos">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Número *</label>
+                        <input type="text" name="paciente_numero" value="{{ datos.paciente_numero if datos else '' }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required placeholder="Ej: 1234">
+                    </div>
                 </div>
 
                 <div class="mb-4">
@@ -211,9 +217,15 @@
                     </div>
                 </div>
 
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Domicilio Acompañante</label>
-                    <input type="text" name="acomp_domicilio" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700">Calle Acompañante</label>
+                        <input type="text" name="acomp_calle" value="{{ datos.acomp_calle if datos else '' }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Número</label>
+                        <input type="text" name="acomp_numero" value="{{ datos.acomp_numero if datos else '' }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                    </div>
                 </div>
             </div>
 
@@ -354,7 +366,7 @@
         }
     }
 
-    // 5. Toggle Denuncia
+    // 5. Toggle Denunciate
     function toggleDenuncia(mostrar) {
         const div = document.getElementById('div_datos_denuncia');
         if (mostrar) {

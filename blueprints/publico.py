@@ -49,17 +49,22 @@ def formulario():
                 ('paciente_nombres', 'Nombres Paciente'),
                 ('paciente_apellidos', 'Apellidos Paciente'),
                 ('paciente_fecha_nac', 'Fecha Nacimiento Paciente'),
-                ('paciente_domicilio', 'Domicilio Paciente'),
                 ('relato_caso', 'Relato del Caso'),
                 ('acomp_nombre', 'Nombre Acompañante'),
                 ('acomp_parentesco', 'Parentesco Acompañante'),
                 ('acomp_telefono', 'Teléfono Acompañante')
             ]
 
+            # Validar campos de texto
             for campo, label in campos_obligatorios:
                 if not f.get(campo):
                     errores.append(f"El campo '{label}' es obligatorio.")
 
+            # Validar direcciones (Calle y Número)
+            if not f.get('paciente_calle') or not f.get('paciente_numero'):
+                errores.append("La dirección del paciente (calle y número) es obligatoria.")
+
+            # Validar selects obligatorios
             if not recinto_id_int:
                 errores.append("Debe seleccionar un Recinto de Notificación.")
             
@@ -146,14 +151,25 @@ def formulario():
                                        recintos=recintos, vulneraciones=vulneraciones, 
                                        ciclos=ciclos, instituciones=instituciones,
                                        datos=request.form)
+            
+            # --- E) CONSTRUCCIÓN DE DIRECCIONES LEGACY ---
+            # Paciente
+            p_calle = (f.get('paciente_calle') or '').strip()
+            p_num = (f.get('paciente_numero') or '').strip()
+            paciente_domicilio_legacy = f"{p_calle} #{p_num}".strip(" #") if (p_calle or p_num) else None
 
-            # --- E) CREACIÓN DEL CASO (Datos Limpios) ---
+            # Acompañante
+            a_calle = (f.get('acomp_calle') or '').strip()
+            a_num = (f.get('acomp_numero') or '').strip()
+            acomp_domicilio_legacy = f"{a_calle} #{a_num}".strip(" #") if (a_calle or a_num) else None
+
+            # --- F) CREACIÓN DEL CASO (Datos Limpios) ---
             nuevo_caso = Caso(
                 # ANTECEDENTES
                 fecha_atencion=datetime.strptime(f.get('fecha_atencion'), '%Y-%m-%d').date(),
                 hora_atencion=datetime.strptime(f.get('hora_atencion'), '%H:%M').time(),
                 recinto_notifica_id=recinto_id_int,
-                recinto_otro_texto=recinto_otro_valido, # Solo si aplica
+                recinto_otro_texto=recinto_otro_valido, # Variable validada arriba
                 folio_atencion=f.get('folio_atencion'),
                 ingresado_por_nombre=f.get('funcionario_nombre'),
                 ingresado_por_cargo=f.get('funcionario_cargo'),
@@ -164,9 +180,13 @@ def formulario():
                 paciente_doc_numero=f.get('paciente_doc_numero'),
                 paciente_doc_otro_descripcion=f.get('paciente_doc_otro_desc') if f.get('paciente_doc_tipo') == 'OTRO' else None,
                 paciente_fecha_nacimiento=datetime.strptime(f.get('paciente_fecha_nac'), '%Y-%m-%d').date(),
-                paciente_domicilio=f.get('paciente_domicilio'),
                 
-                # LEGACY / COMPATIBILIDAD (Llenado automático)
+                # DIRECCIÓN PACIENTE
+                paciente_direccion_calle=f.get('paciente_calle'),
+                paciente_direccion_numero=f.get('paciente_numero'),
+                paciente_domicilio=paciente_domicilio_legacy, # Concatenado seguro
+                
+                # LEGACY / COMPATIBILIDAD
                 origen_nombres=f.get('paciente_nombres'),
                 origen_apellidos=f.get('paciente_apellidos'),
                 origen_relato=f.get('relato_caso'),
@@ -181,9 +201,13 @@ def formulario():
                 acompanante_doc_tipo=f.get('acomp_doc_tipo'),
                 acompanante_doc_numero=f.get('acomp_doc_numero'),
                 acompanante_doc_otro_descripcion=f.get('acomp_doc_otro_desc') if f.get('acomp_doc_tipo') == 'OTRO' else None,
-                acompanante_domicilio=f.get('acomp_domicilio'),
+                
+                # DIRECCIÓN ACOMPAÑANTE
+                acompanante_direccion_calle=f.get('acomp_calle'),
+                acompanante_direccion_numero=f.get('acomp_numero'),
+                acompanante_domicilio=acomp_domicilio_legacy, # Concatenado seguro
 
-                # DENUNCIA (Datos limpios y consistentes)
+                # DENUNCIA
                 denuncia_realizada=denuncia_flag,
                 denuncia_institucion_id=institucion_final_id,
                 denuncia_institucion_otro=institucion_otro_valido,
@@ -191,7 +215,7 @@ def formulario():
                 denuncia_profesional_cargo=profesional_cargo_valido,
                 
                 # VULNERACIÓN TEXTO
-                vulneracion_otro_texto=vulneracion_otro_valido, # Solo si aplica
+                vulneracion_otro_texto=vulneracion_otro_valido,
 
                 # ESTADO INICIAL
                 estado='PENDIENTE_RESCATAR'

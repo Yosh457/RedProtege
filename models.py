@@ -147,6 +147,21 @@ class Caso(db.Model):
     denuncia_profesional_nombre = db.Column(db.String(100))
     denuncia_profesional_cargo = db.Column(db.String(100))
 
+    # --- E) ASIGNACIÓN (NUEVO) ---
+    asignado_a_usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'))
+    asignado_por_usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'))
+    asignado_at = db.Column(db.DateTime)
+
+    # Relaciones explícitas con foreign_keys definidos para evitar ambigüedad
+    asignado_a = db.relationship('Usuario', foreign_keys=[asignado_a_usuario_id], backref='casos_asignados')
+    asignado_por = db.relationship('Usuario', foreign_keys=[asignado_por_usuario_id], backref='casos_distribuidos')
+
+    # --- DIRECCIONES DESGLOSADAS (NUEVO) ---
+    paciente_direccion_calle = db.Column(db.String(200))
+    paciente_direccion_numero = db.Column(db.String(50))
+    acompanante_direccion_calle = db.Column(db.String(200))
+    acompanante_direccion_numero = db.Column(db.String(50))
+
     # --- TRAZABILIDAD & GESTIÓN ---
     fecha_ingreso = db.Column(db.DateTime, default=obtener_hora_chile)
     updated_at = db.Column(db.DateTime, default=obtener_hora_chile, onupdate=obtener_hora_chile)
