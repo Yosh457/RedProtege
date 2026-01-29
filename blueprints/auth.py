@@ -27,12 +27,15 @@ def obtener_ruta_redireccion(usuario):
     if not usuario.rol:
         return url_for('auth.login')
     
-    # El Admin va a su panel de control global
+    # 1. Admin -> Panel Global
     if usuario.rol.nombre == 'Admin':
         return url_for('admin.panel')
     
-    # Referente y Visualizador van al Dashboard de Casos
-    # (Este blueprint 'casos' lo crearemos en el siguiente paso)
+    # 2. NUEVO: Solicitante -> Formulario de Ingreso
+    if usuario.rol.nombre == 'Solicitante':
+        return url_for('solicitudes.formulario')
+    
+    # 3. Referente, Funcionario, Visualizador -> Bandeja de Casos
     return url_for('casos.index')
 
 # --- RUTAS DE AUTENTICACIÓN ---
@@ -55,7 +58,7 @@ def login():
             
             if usuario.check_password(password):
                 login_user(usuario)
-                registrar_log("Inicio de Sesión", f"Acceso exitoso.")
+                registrar_log("Inicio de Sesión", f"Acceso exitoso: {usuario.rol.nombre}")
 
                 # Bloqueo forzoso si requiere cambio de clave
                 if usuario.cambio_clave_requerido:
@@ -66,7 +69,7 @@ def login():
                 return redirect(obtener_ruta_redireccion(usuario))
             else:
                 # Log de contraseña incorrecta
-                registrar_log("Login Fallido", f"Pass incorrecta para: {email}")
+                registrar_log("Login Fallido", f"Contraseña incorrecta para: {email}")
         else:
             # Log de usuario no encontrado
             registrar_log("Login Fallido", f"Email no registrado: {email}")

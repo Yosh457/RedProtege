@@ -51,8 +51,8 @@ def create_app():
     app.register_blueprint(casos_bp)
 
     # Blueprint Formulario Público
-    from blueprints.publico import publico_bp
-    app.register_blueprint(publico_bp)
+    from blueprints.solicitudes import solicitudes_bp
+    app.register_blueprint(solicitudes_bp)
 
     @app.route('/')
     def index():

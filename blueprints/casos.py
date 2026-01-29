@@ -1,8 +1,9 @@
 from flask import Blueprint, render_template, abort, request, flash, redirect, url_for
 from flask_login import login_required, current_user
 from sqlalchemy import case
-from models import db, Caso, Usuario, Rol, AuditoriaCaso, obtener_hora_chile
+from models import db, Caso, Usuario, Rol, AuditoriaCaso, CatalogoEstablecimiento, obtener_hora_chile
 from utils import check_password_change, registrar_log, enviar_aviso_asignacion
+from datetime import datetime
 
 casos_bp = Blueprint('casos', __name__, template_folder='../templates', url_prefix='/casos')
 
@@ -88,7 +89,7 @@ def ver_caso(id):
     if not permitido:
         abort(403) # Acceso Denegado
 
-    # --- 2. LÓGICA DE ASIGNACIÓN (Solo Jefaturas) ---
+    # --- 2. LÓGICA DE ASIGNACIÓN (Solo Admin/Referente) ---
     funcionarios_disponibles = []
     
     # Solo Admin y Referente pueden asignar. Visualizador solo mira.
@@ -207,3 +208,82 @@ def ver_caso(id):
     return render_template('casos/ver.html', 
                            caso=caso, 
                            funcionarios=funcionarios_disponibles)
+
+# --- NUEVA RUTA: GESTIÓN CLÍNICA (FASE 4 P2) ---
+@casos_bp.route('/gestionar/<int:id>', methods=['GET', 'POST'])
+@login_required
+def gestionar_caso(id):
+    """
+    Formulario para que el Funcionario (o Admin) ingrese la gestión clínica y cierre el caso.
+    """
+    caso = Caso.query.get_or_404(id)
+    rol_nombre = current_user.rol.nombre
+
+    # 1. Validar Permisos para GESTIONAR (Más estricto que ver)
+    puede_gestionar = False
+    if rol_nombre == 'Admin':
+        puede_gestionar = True
+    elif rol_nombre == 'Funcionario' and caso.asignado_a_usuario_id == current_user.id:
+        puede_gestionar = True
+    
+    if not puede_gestionar:
+        flash('No tienes permisos para gestionar este caso.', 'danger')
+        return redirect(url_for('casos.ver_caso', id=caso.id))
+
+    # Cargar catálogos necesarios para el formulario de gestión
+    establecimientos = CatalogoEstablecimiento.query.filter_by(activo=True).order_by(CatalogoEstablecimiento.nombre).all()
+
+    if request.method == 'POST':
+        try:
+            # 2. PROCESAR GESTIÓN
+            
+            # A) Completar Nombres (Solo si venían vacíos del origen)
+            # Esto evita sobrescribir si ya tenían datos
+            if not caso.origen_nombres:
+                caso.origen_nombres = request.form.get('nombres_edit')
+            if not caso.origen_apellidos:
+                caso.origen_apellidos = request.form.get('apellidos_edit')
+
+            # B) Datos Clínicos
+            caso.recinto_inscrito_id = request.form.get('recinto_inscrito_id')
+            caso.ingreso_lain = (request.form.get('ingreso_lain') == '1')
+            
+            # C) Lógica Fallecido
+            es_fallecido = (request.form.get('fallecido') == '1')
+            caso.fallecido = es_fallecido
+            if es_fallecido and request.form.get('fecha_defuncion'):
+                caso.fecha_defuncion = datetime.strptime(request.form.get('fecha_defuncion'), '%Y-%m-%d').date()
+            else:
+                caso.fecha_defuncion = None # Limpiar si desmarcan
+
+            # D) Seguimiento (Los valores vienen exactamente como los códigos ENUM del select)
+            caso.control_sanitario = request.form.get('control_sanitario')
+            caso.gestion_vacunas = request.form.get('gestion_vacunas')
+            caso.gestion_judicial = request.form.get('gestion_judicial')
+            caso.gestion_salud_mental = request.form.get('gestion_salud_mental')
+            caso.gestion_cosam = request.form.get('gestion_cosam')
+
+            # E) Observaciones Finales
+            caso.observaciones_gestion = request.form.get('observaciones_gestion')
+            
+            # F) Auditoría del movimiento
+            audit = AuditoriaCaso(
+                caso_id=caso.id,
+                usuario_id=current_user.id,
+                fecha_movimiento=obtener_hora_chile(),
+                accion='GESTION_CLINICA',
+                detalles_cambio={'tipo': 'actualizacion_seguimiento'}
+            )
+            db.session.add(audit)
+            
+            db.session.commit()
+            
+            flash('Gestión guardada exitosamente.', 'success')
+            return redirect(url_for('casos.ver_caso', id=caso.id))
+
+        except Exception as e:
+            db.session.rollback()
+            print(f"Error gestionando caso: {e}")
+            flash('Ocurrió un error al guardar la gestión.', 'danger')
+
+    return render_template('casos/gestion.html', caso=caso, establecimientos=establecimientos)

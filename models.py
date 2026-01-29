@@ -54,6 +54,13 @@ class CatalogoInstitucion(db.Model):
     activo = db.Column(db.Boolean, default=True)
     casos = db.relationship('Caso', back_populates='denuncia_institucion')
 
+class CatalogoEstablecimiento(db.Model):
+    __tablename__ = 'catalogo_establecimientos'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(100), nullable=False, unique=True)
+    activo = db.Column(db.Boolean, default=True)
+    casos = db.relationship('Caso', back_populates='recinto_inscrito')
+
 # --- USUARIOS & SISTEMA ---
 
 class Usuario(db.Model, UserMixin):
@@ -115,9 +122,11 @@ class Caso(db.Model):
     # Nota: origen_rut ahora es nullable, se mantiene por compatibilidad legacy si es necesario
     origen_rut = db.Column(db.String(20), nullable=True, index=True) 
     
+    # RELAJADO: Ahora pueden ser NULL si el solicitante no los tiene
+    origen_nombres = db.Column(db.String(100), nullable=True)
+    origen_apellidos = db.Column(db.String(100), nullable=True)
+
     # Los campos 'origen_' obligatorios se llenarán con los datos del form para cumplir el NOT NULL
-    origen_nombres = db.Column(db.String(100), nullable=False)
-    origen_apellidos = db.Column(db.String(100), nullable=False)
     origen_telefono = db.Column(db.String(20))
     origen_fecha_nacimiento = db.Column(db.Date) # Legacy
     origen_relato = db.Column(db.Text, nullable=False)
@@ -147,7 +156,7 @@ class Caso(db.Model):
     denuncia_profesional_nombre = db.Column(db.String(100))
     denuncia_profesional_cargo = db.Column(db.String(100))
 
-    # --- E) ASIGNACIÓN (NUEVO) ---
+    # --- E) ASIGNACIÓN ---
     asignado_a_usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'))
     asignado_por_usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'))
     asignado_at = db.Column(db.DateTime)
@@ -155,6 +164,27 @@ class Caso(db.Model):
     # Relaciones explícitas con foreign_keys definidos para evitar ambigüedad
     asignado_a = db.relationship('Usuario', foreign_keys=[asignado_a_usuario_id], backref='casos_asignados')
     asignado_por = db.relationship('Usuario', foreign_keys=[asignado_por_usuario_id], backref='casos_distribuidos')
+
+    # --- F) GESTIÓN CLÍNICA / SEGUIMIENTO (FASE 4 P2 - CÓDIGOS LIMPIOS) ---
+    recinto_inscrito_id = db.Column(db.Integer, db.ForeignKey('catalogo_establecimientos.id'))
+    recinto_inscrito = db.relationship('CatalogoEstablecimiento', back_populates='casos')
+    
+    ingreso_lain = db.Column(db.Boolean, default=False)
+    fallecido = db.Column(db.Boolean, default=False)
+    fecha_defuncion = db.Column(db.Date)
+    
+    # Seguimiento Sanitario (ENUMs codificados)
+    control_sanitario = db.Column(db.Enum('PENDIENTE_REVISION', 'CITACION_1', 'CITACION_2', 'CITACION_3', 'AL_DIA'), default='PENDIENTE_REVISION')
+    gestion_vacunas = db.Column(db.Enum('PENDIENTE_REVISION', 'CITACION_1', 'CITACION_2', 'CITACION_3', 'AL_DIA'), default='PENDIENTE_REVISION')
+    
+    # Seguimiento Salud Mental / COSAM
+    gestion_salud_mental = db.Column(db.Enum('PENDIENTE_REVISION', 'INGRESADO', 'NO_CORRESPONDE'), default='PENDIENTE_REVISION')
+    gestion_cosam = db.Column(db.Enum('PENDIENTE_REVISION', 'DERIVADO', 'INGRESADO', 'NO_CORRESPONDE'), default='PENDIENTE_REVISION')
+    
+    # Seguimiento Judicial
+    gestion_judicial = db.Column(db.Enum('PENDIENTE_REVISION', 'PENDIENTE', 'AL_DIA'), default='PENDIENTE_REVISION')
+
+    observaciones_gestion = db.Column(db.Text)
 
     # --- DIRECCIONES DESGLOSADAS (NUEVO) ---
     paciente_direccion_calle = db.Column(db.String(200))
@@ -169,7 +199,6 @@ class Caso(db.Model):
     ciclo_vital_id = db.Column(db.Integer, db.ForeignKey('catalogo_ciclos.id'), nullable=False) # Índice ya existe via FK o explícito
     ciclo_vital = db.relationship('CatalogoCiclo', back_populates='casos')
 
-    observaciones_gestion = db.Column(db.Text)
     acciones_realizadas = db.Column(db.Text)
 
     estado = db.Column(db.Enum('PENDIENTE_RESCATAR', 'EN_SEGUIMIENTO', 'CERRADO'), 

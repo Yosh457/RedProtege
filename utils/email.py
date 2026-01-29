@@ -117,3 +117,71 @@ def enviar_aviso_asignacion(funcionario, caso, asignador):
     except Exception as e:
         print(f"Error enviando notificación asignación: {e}")
         return False
+    
+def enviar_aviso_nuevo_caso(caso, usuario_ingreso):
+    """
+    Envía aviso a los Referentes del ciclo correspondiente Y a los Globales.
+    Usa Lazy Import para evitar ciclos.
+    """
+    from models import Usuario, Rol # ✅ Lazy Import Correcto
+
+    remitente = os.getenv("EMAIL_USUARIO")
+    contrasena = os.getenv("EMAIL_CONTRASENA")
+    
+    if not remitente or not contrasena: return
+
+    # Buscar referentes:
+    # 1. Que sean del ciclo del caso
+    # 2. O que sean Globales (ciclo_asignado_id IS NULL)
+    referentes = Usuario.query.join(Rol).filter(
+        Rol.nombre == 'Referente',
+        Usuario.activo == True
+    ).filter(
+        (Usuario.ciclo_asignado_id == caso.ciclo_vital_id) | (Usuario.ciclo_asignado_id == None)
+    ).all()
+
+    if not referentes: return
+
+    destinatarios = [u.email for u in referentes if u.email]
+    if not destinatarios: return
+
+    # Armar lista única de emails (set) para no duplicar si hubiera lógica compleja
+    destinatarios = list(set(destinatarios))
+
+    # Link al caso
+    url_caso = url_for('casos.ver_caso', id=caso.id, _external=True)
+
+    msg = MIMEMultipart()
+    msg['Subject'] = f'Nuevo Caso Ingresado #{caso.folio_atencion} - RedProtege'
+    msg['From'] = formataddr(('RedProtege Alertas', remitente))
+    msg['To'] = ", ".join(destinatarios)
+
+    cuerpo_html = f"""
+    <div style="font-family: Arial, sans-serif; color: #333; border: 1px solid #ddd; padding: 20px; max-width: 600px;">
+        <h2 style="color: #275c80; margin-top: 0;">Nuevo Caso Disponible</h2>
+        <p>Se ha ingresado una nueva solicitud que requiere revisión.</p>
+        
+        <ul style="background: #f9f9f9; padding: 15px 20px; list-style: none;">
+            <li><strong>Folio Atención:</strong> {caso.folio_atencion}</li>
+            <li><strong>Ciclo Vital:</strong> {caso.ciclo_vital.nombre}</li>
+            <li><strong>Fecha Atención:</strong> {caso.fecha_atencion.strftime('%d/%m/%Y')}</li>
+            <li><strong>Ingresado por:</strong> {caso.ingresado_por_nombre} ({usuario_ingreso.nombre_completo})</li>
+        </ul>
+
+        <p style="text-align: center; margin-top: 25px;">
+            <a href="{url_caso}" style="background-color: #275c80; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+                Ir a Bandeja de Casos
+            </a>
+        </p>
+    </div>
+    """
+    msg.attach(MIMEText(cuerpo_html, 'html'))
+
+    try:
+        with smtplib.SMTP('smtp.gmail.com', 587) as server:
+            server.starttls()
+            server.login(remitente, contrasena)
+            server.send_message(msg)
+            print(f"Aviso enviado a {len(destinatarios)} referentes.")
+    except Exception as e:
+        print(f"Error enviando aviso referente: {e}")

@@ -10,7 +10,7 @@
             <p class="mt-2 text-gray-600">Complete los antecedentes para derivar el caso a la red de protección.</p>
         </div>
 
-        <form method="post" action="{{ url_for('publico.formulario') }}" class="space-y-8" id="casoForm">
+        <form method="post" action="{{ url_for('solicitudes.formulario') }}" class="space-y-8" id="casoForm">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
             
             <div class="hidden">
@@ -158,7 +158,7 @@
 
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700">Relato del Caso *</label>
-                    <textarea name="relato_caso" rows="4" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required placeholder="Describa brevemente la situación..."></textarea>
+                    <textarea name="relato_caso" rows="4" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required placeholder="Describa brevemente la situación...">{{ datos.relato_caso if datos else '' }}</textarea>
                 </div>
             </div>
 
