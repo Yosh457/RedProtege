@@ -407,11 +407,6 @@
                             </svg>
                             Ingresar Gestión
                         </a>
-
-                        {# Por ahora va al mismo form de gestión; luego lo cambiamos a POST directo o ruta /cerrar #}
-                        <a href="{{ url_for('casos.gestionar_caso', id=caso.id) }}" class="btn btn-secondary w-full">
-                            Cerrar Caso
-                        </a>
                     </div>
                 {% else %}
                     <div class="bg-yellow-50 p-4 rounded text-yellow-800 text-sm text-center">

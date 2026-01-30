@@ -3,5 +3,7 @@ __pycache__/
 *.py[cod]
 .env
 .DS_Store
-static/uploads/*
-!static/uploads/.gitkeep
+
+# Ignorar archivos generados en uploads pero mantener la carpeta
+uploads/actas/*
+!uploads/actas/.gitkeep

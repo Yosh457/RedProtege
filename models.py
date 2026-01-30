@@ -214,6 +214,9 @@ class Caso(db.Model):
     fecha_cierre = db.Column(db.DateTime)
     usuario_cierre_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'))
 
+    # Ruta al archivo PDF del acta de cierre
+    acta_pdf_path = db.Column(db.String(255))
+
     auditorias = db.relationship('AuditoriaCaso', back_populates='caso', cascade="all, delete-orphan")
 
     # Índice compuesto para dashboard (Solicitado)

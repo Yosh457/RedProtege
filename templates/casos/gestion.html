@@ -164,14 +164,48 @@
             <textarea name="observaciones_gestion" rows="6" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="Ingrese detalle de la gestión, coordinaciones realizadas y estado actual del caso...">{{ caso.observaciones_gestion or '' }}</textarea>
         </div>
 
-        <div class="flex justify-end gap-4 pt-4 pb-12">
-            <a href="{{ url_for('casos.ver_caso', id=caso.id) }}" class="px-6 py-3 border border-gray-300 bg-white text-gray-700 rounded-md font-medium hover:bg-gray-50">Cancelar</a>
-            <button type="submit" class="px-6 py-3 bg-blue-600 text-white rounded-md font-bold shadow hover:bg-blue-700 transition">
-                Guardar Gestión
+        <div class="flex justify-between items-center pt-6 pb-12 border-t mt-6">
+            <button type="button" onclick="abrirModalCierre()" class="px-6 py-3 bg-red-100 text-red-700 rounded-md font-bold hover:bg-red-200 transition border border-red-200">
+                Cerrar Caso Definitivamente
             </button>
+
+            <div class="flex gap-4">
+                <a href="{{ url_for('casos.ver_caso', id=caso.id) }}" class="px-6 py-3 border border-gray-300 bg-white text-gray-700 rounded-md font-medium hover:bg-gray-50">Cancelar</a>
+                <button type="submit" class="px-6 py-3 bg-blue-600 text-white rounded-md font-bold shadow hover:bg-blue-700 transition">
+                    Guardar Gestión
+                </button>
+            </div>
         </div>
 
     </form>
+</div>
+
+<div id="modalCierre" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div class="mt-3 text-center">
+            <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
+                <svg class="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+            </div>
+            <h3 class="text-lg leading-6 font-medium text-gray-900 mt-4">¿Cerrar Caso?</h3>
+            <div class="mt-2 px-7 py-3">
+                <p class="text-sm text-gray-500">
+                    Esta acción finalizará el caso, generará el Acta de Cierre en PDF y notificará a las jefaturas. 
+                    <strong>No se podrán hacer más ediciones.</strong>
+                </p>
+            </div>
+            <div class="items-center px-4 py-3">
+                <form method="post" action="{{ url_for('casos.cerrar_caso', id=caso.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <button type="submit" class="px-4 py-2 bg-red-600 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-300">
+                        Sí, Cerrar Caso
+                    </button>
+                </form>
+                <button onclick="cerrarModalCierre()" class="mt-3 px-4 py-2 bg-gray-100 text-gray-700 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-200 focus:outline-none">
+                    Cancelar
+                </button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -211,5 +245,12 @@
         toggleDefuncion();
         toggleOtroInscrito();
     });
+
+    function abrirModalCierre() {
+        document.getElementById('modalCierre').classList.remove('hidden');
+    }
+    function cerrarModalCierre() {
+        document.getElementById('modalCierre').classList.add('hidden');
+    }
 </script>
 {% endblock %}

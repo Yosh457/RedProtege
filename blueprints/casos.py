@@ -1,8 +1,9 @@
+import os
 from flask import Blueprint, render_template, abort, request, flash, redirect, url_for
 from flask_login import login_required, current_user
 from sqlalchemy import case
 from models import db, Caso, Usuario, Rol, AuditoriaCaso, CatalogoEstablecimiento, obtener_hora_chile
-from utils import check_password_change, registrar_log, enviar_aviso_asignacion
+from utils import check_password_change, registrar_log, enviar_aviso_asignacion, generar_acta_cierre_pdf, enviar_aviso_cierre
 from datetime import datetime
 
 casos_bp = Blueprint('casos', __name__, template_folder='../templates', url_prefix='/casos')
@@ -310,3 +311,80 @@ def gestionar_caso(id):
             flash('Ocurrió un error al guardar la gestión.', 'danger')
 
     return render_template('casos/gestion.html', caso=caso, establecimientos=establecimientos)
+
+# --- RUTA CIERRE DE CASO (FINAL) ---
+@casos_bp.route('/cerrar/<int:id>', methods=['POST'])
+@login_required
+def cerrar_caso(id):
+    caso = Caso.query.get_or_404(id)
+    rol_nombre = current_user.rol.nombre
+
+    # 1. Validar Permisos (Admin o Funcionario Asignado)
+    puede_cerrar = False
+    if rol_nombre == 'Admin':
+        puede_cerrar = True
+    elif rol_nombre == 'Funcionario' and caso.asignado_a_usuario_id == current_user.id:
+        puede_cerrar = True
+    
+    if not puede_cerrar:
+        flash('No tienes permisos para cerrar este caso.', 'danger')
+        return redirect(url_for('casos.ver_caso', id=caso.id))
+
+    if caso.estado == 'CERRADO':
+        flash('El caso ya se encuentra cerrado.', 'warning')
+        return redirect(url_for('casos.ver_caso', id=caso.id))
+
+    try:
+        # 2. Actualizar Estado en BD (Primer Commit)
+        caso.estado = 'CERRADO'
+        caso.fecha_cierre = obtener_hora_chile() # Fecha oficial
+        caso.usuario_cierre_id = current_user.id
+        
+        # Auditoría
+        audit = AuditoriaCaso(
+            caso_id=caso.id,
+            usuario_id=current_user.id,
+            fecha_movimiento=obtener_hora_chile(),
+            accion='CIERRE_CASO',
+            detalles_cambio={'motivo': 'Cierre manual por gestión finalizada'}
+        )
+        db.session.add(audit)
+        db.session.commit() # Guardamos para que la fecha_cierre esté firme en DB
+
+        # 3. Generar PDF de Acta (Path Estable y Multiplataforma)
+        filename = f"acta_{caso.id}_{caso.folio_atencion}.pdf"
+        
+        # Calculamos la raíz del proyecto subiendo un nivel desde 'blueprints/'
+        # Esto funciona en Windows y Linux/cPanel por igual
+        BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        uploads_actas_dir = os.path.join(BASE_DIR, 'uploads', 'actas')
+        
+        # Ruta absoluta completa para guardar el archivo
+        output_path_abs = os.path.join(uploads_actas_dir, filename)
+
+        # Ruta relativa para guardar en BD (portable)
+        output_path_rel = f"uploads/actas/{filename}"
+
+        # Generar el PDF
+        generar_acta_cierre_pdf(caso, output_path_abs, current_user)
+
+        # 4. Guardar ruta relativa en BD
+        caso.acta_pdf_path = output_path_rel
+        db.session.commit()
+
+        # 5. Enviar Correo con Adjunto (Best Effort)
+        try:
+            enviar_aviso_cierre(caso, current_user, output_path_abs)
+            flash('Caso cerrado exitosamente. Acta generada y notificaciones enviadas.', 'success')
+        except Exception as e_mail:
+            print(f"Error enviando correo cierre: {e_mail}")
+            flash('Caso cerrado y acta generada, pero falló el envío del correo.', 'warning')
+
+        registrar_log("Cierre Caso", f"Caso #{caso.folio_atencion} cerrado por {current_user.nombre_completo}")
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error cerrando caso: {e}")
+        flash(f'Error crítico al cerrar el caso: {str(e)}', 'danger')
+
+    return redirect(url_for('casos.ver_caso', id=caso.id))
