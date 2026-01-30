@@ -56,7 +56,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 <div class="col-span-2 md:col-span-1">
                     <label class="block text-sm font-medium text-gray-700 mb-1">Recinto de Inscripción (APS)</label>
-                    <select name="recinto_inscrito_id" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    <select name="recinto_inscrito_id" id="recinto_inscrito_id" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" onchange="toggleOtroInscrito()">
                         <option value="">-- Seleccione Establecimiento --</option>
                         {% for est in establecimientos %}
                             <option value="{{ est.id }}" {% if caso.recinto_inscrito_id == est.id %}selected{% endif %}>
@@ -64,6 +64,13 @@
                             </option>
                         {% endfor %}
                     </select>
+                    
+                    <div id="div_recinto_inscrito_otro" class="hidden mt-2">
+                        <input type="text" name="recinto_inscrito_otro" 
+                            value="{{ caso.recinto_inscrito_otro_texto if caso.recinto_inscrito_otro_texto else '' }}" 
+                            placeholder="Especifique Recinto" 
+                            class="block w-full rounded-md border-gray-300 shadow-sm text-sm focus:border-blue-500 focus:ring-blue-500">
+                    </div>
                 </div>
 
                 <div class="col-span-2 md:col-span-1 flex items-center gap-6 pt-6">
@@ -183,9 +190,26 @@
         }
     }
 
-    // Ejecutar al inicio por si ya venía marcado
+    // NUEVO: Lógica para "Otro" Recinto Inscrito
+    function toggleOtroInscrito() {
+        const select = document.getElementById('recinto_inscrito_id');
+        const div = document.getElementById('div_recinto_inscrito_otro');
+        
+        if (select.selectedIndex === -1) return;
+        
+        const text = select.options[select.selectedIndex].text;
+        
+        if (text.toLowerCase().includes("otro")) {
+            div.classList.remove('hidden');
+        } else {
+            div.classList.add('hidden');
+        }
+    }
+
+    // Ejecutar al inicio por si ya venían datos cargados
     document.addEventListener('DOMContentLoaded', function() {
         toggleDefuncion();
+        toggleOtroInscrito();
     });
 </script>
 {% endblock %}

@@ -7,6 +7,13 @@ from datetime import datetime
 
 casos_bp = Blueprint('casos', __name__, template_folder='../templates', url_prefix='/casos')
 
+def safe_int(value):
+    """Ayuda a convertir a int de forma segura, retornando None si falla o es vacío."""
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
+
 @casos_bp.before_request
 @login_required
 @check_password_change
@@ -244,8 +251,24 @@ def gestionar_caso(id):
             if not caso.origen_apellidos:
                 caso.origen_apellidos = request.form.get('apellidos_edit')
 
-            # B) Datos Clínicos
-            caso.recinto_inscrito_id = request.form.get('recinto_inscrito_id')
+            # B) Datos Clínicos (CORRECCIÓN SAFE INT + OTRO)
+            recinto_inscrito_id_raw = request.form.get('recinto_inscrito_id')
+            recinto_inscrito_id_int = safe_int(recinto_inscrito_id_raw) # Convierte '' a None
+            
+            caso.recinto_inscrito_id = recinto_inscrito_id_int
+            
+            # Lógica "Otro Recinto Inscrito"
+            caso.recinto_inscrito_otro_texto = None # Reset por defecto
+            if recinto_inscrito_id_int:
+                est_obj = CatalogoEstablecimiento.query.get(recinto_inscrito_id_int)
+                if est_obj and 'otro' in est_obj.nombre.lower():
+                    texto_otro = request.form.get('recinto_inscrito_otro')
+                    if texto_otro and texto_otro.strip():
+                        caso.recinto_inscrito_otro_texto = texto_otro.strip()
+                    else:
+                        flash("Seleccionó 'Otro' recinto pero no especificó cuál.", "warning")
+                        # No bloqueamos, pero avisamos.
+
             caso.ingreso_lain = (request.form.get('ingreso_lain') == '1')
             
             # C) Lógica Fallecido

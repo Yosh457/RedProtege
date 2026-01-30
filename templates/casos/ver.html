@@ -34,9 +34,7 @@
 
             <p class="text-gray-500 mt-1">
                 Ingresado el
-                <strong>
-                    {{ caso.fecha_ingreso.strftime('%d/%m/%Y %H:%M') if caso.fecha_ingreso else '-' }}
-                </strong>
+                <strong>{{ caso.fecha_ingreso.strftime('%d/%m/%Y %H:%M') if caso.fecha_ingreso else '-' }}</strong>
                 {% if caso.ingresado_por_nombre %}
                     por <strong>{{ caso.ingresado_por_nombre }}</strong>
                 {% endif %}
@@ -73,7 +71,7 @@
                     {% endfor %}
                 </select>
                 <p class="text-xs text-gray-500 mt-1">
-                    Solo se listan funcionarios activos y compatibles con el ciclo (según reglas del sistema).
+                    Solo se listan funcionarios activos y compatibles con el ciclo.
                 </p>
             </div>
 
@@ -98,9 +96,10 @@
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
-        {# --- COLUMNA IZQUIERDA: DATOS INMUTABLES (Form público) --- #}
+        {# --- COLUMNA IZQUIERDA: DATOS INMUTABLES --- #}
         <div class="lg:col-span-2 space-y-6">
 
+            {# --- PACIENTE --- #}
             <div class="bg-white p-6 rounded-xl shadow border-l-4 border-green-500">
                 <h3 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Datos del Paciente (Inmutables)</h3>
 
@@ -108,7 +107,12 @@
                     <div>
                         <span class="block text-gray-500 text-xs">Nombre Completo</span>
                         <span class="font-medium text-gray-900">
-                            {{ caso.origen_nombres }} {{ caso.origen_apellidos }}
+                            {% if caso.origen_nombres or caso.origen_apellidos %}
+                                {{ caso.origen_nombres if caso.origen_nombres else '' }}
+                                {{ caso.origen_apellidos if caso.origen_apellidos else '' }}
+                            {% else %}
+                                <span class="text-gray-400 italic">(Pendiente)</span>
+                            {% endif %}
                         </span>
                     </div>
 
@@ -117,6 +121,9 @@
                         <span class="font-medium text-gray-900">
                             {% if caso.paciente_doc_tipo and caso.paciente_doc_numero %}
                                 {{ caso.paciente_doc_tipo }}: {{ caso.paciente_doc_numero }}
+                                {% if caso.paciente_doc_tipo == 'OTRO' and caso.paciente_doc_otro_descripcion %}
+                                    <span class="text-gray-500 text-xs">({{ caso.paciente_doc_otro_descripcion }})</span>
+                                {% endif %}
                             {% elif caso.origen_rut %}
                                 RUT: {{ caso.origen_rut }}
                             {% else %}
@@ -153,6 +160,7 @@
                 </div>
             </div>
 
+            {# --- RELATO + VULNERACIONES --- #}
             <div class="bg-white p-6 rounded-xl shadow border-l-4 border-gray-500">
                 <h3 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Relato del Caso (Inmutable)</h3>
 
@@ -183,6 +191,7 @@
                 </div>
             </div>
 
+            {# --- ACOMPAÑANTE (COMPLETO) --- #}
             <div class="bg-white p-6 rounded-xl shadow border-l-4 border-yellow-500">
                 <h3 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Datos del Acompañante (Inmutables)</h3>
 
@@ -239,6 +248,7 @@
                 </div>
             </div>
 
+            {# --- DENUNCIA (COMPLETA) --- #}
             <div class="bg-white p-6 rounded-xl shadow border-l-4 border-red-600">
                 <h3 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Denuncia (Inmutable)</h3>
 
@@ -265,6 +275,7 @@
                                     {% endif %}
                                 </span>
                             </div>
+
                             <div>
                                 <span class="block text-gray-500 text-xs">Profesional</span>
                                 <span class="font-medium text-gray-900">
@@ -279,9 +290,101 @@
                 </div>
             </div>
 
+            {# --- GESTIÓN CLÍNICA REGISTRADA (LECTURA) --- #}
+
+            {# Labels bonitos para ENUMs #}
+            {% set labels = {
+              'PENDIENTE_REVISION':'Pendiente por Revisar',
+              'CITACION_1':'1° Citación',
+              'CITACION_2':'2° Citación',
+              'CITACION_3':'3° Citación',
+              'AL_DIA':'Al Día',
+              'PENDIENTE':'Pendiente',
+              'INGRESADO':'Ingresado',
+              'DERIVADO':'Derivado',
+              'NO_CORRESPONDE':'No corresponde'
+            } %}
+
+            {# Condición: mostrar tarjeta si hay cualquier dato de gestión relevante #}
+            {% set tiene_gestion =
+                caso.recinto_inscrito_id
+                or caso.ingreso_lain
+                or caso.fallecido
+                or caso.fecha_defuncion
+                or caso.control_sanitario
+                or caso.gestion_vacunas
+                or caso.gestion_judicial
+                or caso.gestion_salud_mental
+                or caso.gestion_cosam
+                or caso.observaciones_gestion
+                or caso.recinto_inscrito_otro_texto
+            %}
+
+            {% if tiene_gestion %}
+            <div class="bg-white p-6 rounded-xl shadow border-l-4 border-purple-600">
+              <h3 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Gestión Clínica Registrada</h3>
+
+              <div class="text-sm space-y-3">
+                {# Recinto + Texto Otro #}
+                {% if caso.recinto_inscrito %}
+                  <p>
+                    <span class="font-bold">Recinto Inscrito:</span>
+                    {{ caso.recinto_inscrito.nombre }}
+                    {% if caso.recinto_inscrito_otro_texto %}
+                      <span class="text-gray-600 italic">({{ caso.recinto_inscrito_otro_texto }})</span>
+                    {% endif %}
+                  </p>
+                {% elif caso.recinto_inscrito_otro_texto %}
+                  <p>
+                    <span class="font-bold">Recinto Inscrito:</span>
+                    <span class="text-gray-600 italic">{{ caso.recinto_inscrito_otro_texto }}</span>
+                  </p>
+                {% endif %}
+
+                <div class="flex flex-wrap gap-2">
+                  {% if caso.ingreso_lain %}
+                    <span class="inline-block bg-purple-100 text-purple-800 text-xs font-bold px-2 py-1 rounded">
+                      Ingreso LAIN
+                    </span>
+                  {% endif %}
+
+                  {% if caso.fallecido %}
+                    <span class="inline-block bg-black text-white text-xs font-bold px-2 py-1 rounded">
+                      Fallecido{% if caso.fecha_defuncion %} ({{ caso.fecha_defuncion.strftime('%d-%m-%Y') }}){% endif %}
+                    </span>
+                  {% endif %}
+                </div>
+
+                {# Mostrar siempre los estados (aunque estén en pendiente) #}
+                {% if caso.control_sanitario %}
+                  <p><span class="font-bold">Controles:</span> {{ labels.get(caso.control_sanitario, caso.control_sanitario) }}</p>
+                {% endif %}
+                {% if caso.gestion_vacunas %}
+                  <p><span class="font-bold">Vacunas:</span> {{ labels.get(caso.gestion_vacunas, caso.gestion_vacunas) }}</p>
+                {% endif %}
+                {% if caso.gestion_judicial %}
+                  <p><span class="font-bold">Informe Judicial:</span> {{ labels.get(caso.gestion_judicial, caso.gestion_judicial) }}</p>
+                {% endif %}
+                {% if caso.gestion_salud_mental %}
+                  <p><span class="font-bold">Salud Mental:</span> {{ labels.get(caso.gestion_salud_mental, caso.gestion_salud_mental) }}</p>
+                {% endif %}
+                {% if caso.gestion_cosam %}
+                  <p><span class="font-bold">COSAM:</span> {{ labels.get(caso.gestion_cosam, caso.gestion_cosam) }}</p>
+                {% endif %}
+
+                {% if caso.observaciones_gestion %}
+                  <div class="mt-2 p-3 bg-gray-50 rounded border border-gray-200">
+                    <span class="block text-xs font-bold text-gray-500 mb-1">Observaciones y derivaciones:</span>
+                    {{ caso.observaciones_gestion }}
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+            {% endif %}
+
         </div>
 
-        {# --- COLUMNA DERECHA: GESTIÓN (Editable para Admin o Funcionario asignado) --- #}
+        {# --- COLUMNA DERECHA: GESTIÓN --- #}
         <div class="space-y-6">
             <div class="bg-white p-6 rounded-xl shadow border-t-4 border-blue-600">
                 <h3 class="text-lg font-bold text-gray-800 mb-4">Gestión del Caso</h3>
@@ -290,14 +393,25 @@
                 {% set puede_gestionar = (rol == 'Admin') or (rol == 'Funcionario' and caso.asignado_a_usuario_id == current_user.id) %}
 
                 {% if puede_gestionar %}
-                    <div class="bg-blue-50 border border-blue-100 rounded-lg p-4 text-sm text-blue-800">
-                        Puedes gestionar este caso. Los datos del formulario público son inmutables.
+                    <div class="bg-blue-50 border border-blue-100 rounded-lg p-4 text-sm text-blue-800 mb-4">
+                        Puedes gestionar este caso. Los datos del formulario son inmutables.
                     </div>
 
-                    <div class="text-center py-4">
-                        {# En Fase 4 esto debe ser un POST real #}
-                        <button type="button" class="btn btn-primary w-full mb-2">Ingresar Gestión</button>
-                        <button type="button" class="btn btn-secondary w-full">Cerrar Caso</button>
+                    <div class="text-center">
+                        <a href="{{ url_for('casos.gestionar_caso', id=caso.id) }}"
+                           class="btn btn-primary w-full mb-2 flex items-center justify-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z">
+                                </path>
+                            </svg>
+                            Ingresar Gestión
+                        </a>
+
+                        {# Por ahora va al mismo form de gestión; luego lo cambiamos a POST directo o ruta /cerrar #}
+                        <a href="{{ url_for('casos.gestionar_caso', id=caso.id) }}" class="btn btn-secondary w-full">
+                            Cerrar Caso
+                        </a>
                     </div>
                 {% else %}
                     <div class="bg-yellow-50 p-4 rounded text-yellow-800 text-sm text-center">

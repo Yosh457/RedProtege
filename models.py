@@ -168,6 +168,9 @@ class Caso(db.Model):
     # --- F) GESTIÓN CLÍNICA / SEGUIMIENTO (FASE 4 P2 - CÓDIGOS LIMPIOS) ---
     recinto_inscrito_id = db.Column(db.Integer, db.ForeignKey('catalogo_establecimientos.id'))
     recinto_inscrito = db.relationship('CatalogoEstablecimiento', back_populates='casos')
+
+    # NUEVO: Texto para "Otro" recinto inscrito
+    recinto_inscrito_otro_texto = db.Column(db.String(255))
     
     ingreso_lain = db.Column(db.Boolean, default=False)
     fallecido = db.Column(db.Boolean, default=False)
