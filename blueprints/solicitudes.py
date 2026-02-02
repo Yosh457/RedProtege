@@ -96,18 +96,36 @@ def formulario():
             
             vulneracion_texto = f.get('vulneracion_otro_txt') if flag_vuln_otro else None
 
-            # Institución (si hubo denuncia)
+            # 5. Lógica Denuncia Institución (si hubo denuncia)
+            # Si NO hubo denuncia, forzamos todos los campos relacionados a None (NULL en DB)
             denuncia_flag = (f.get('denuncia_realizada') == '1')
-            inst_texto = None
-            inst_final_id = None
             
-            if denuncia_flag and institucion_id_int:
-                inst_final_id = institucion_id_int
-                inst_obj = CatalogoInstitucion.query.get(institucion_id_int)
-                if inst_obj and 'otro' in inst_obj.nombre.lower():
-                    inst_texto = f.get('institucion_otro')
+            denuncia_inst_id = None
+            denuncia_inst_otro = None
+            denuncia_prof_nombre = None
+            denuncia_prof_cargo = None
 
-            # 5. Construcción de Direcciones (Legacy + Nuevas)
+            if denuncia_flag:
+                # Solo procesamos datos si marcó Sí
+                denuncia_inst_id = institucion_id_int
+                # Revisar si es "Otra" institución
+                if denuncia_inst_id:
+                    inst_obj = CatalogoInstitucion.query.get(denuncia_inst_id)
+                    if inst_obj and 'otro' in inst_obj.nombre.lower():
+                        denuncia_inst_otro = f.get('institucion_otro')
+                
+                denuncia_prof_nombre = f.get('denuncia_nombre') or None
+                denuncia_prof_cargo = f.get('denuncia_cargo') or None
+
+            # 6. Preparar Fechas
+            fecha_atencion_dt = datetime.strptime(f.get('fecha_atencion'), '%Y-%m-%d').date()
+            hora_atencion_dt = datetime.strptime(f.get('hora_atencion'), '%H:%M').time() if f.get('hora_atencion') else None
+            
+            fecha_nac_dt = None
+            if f.get('paciente_fecha_nac'):
+                fecha_nac_dt = datetime.strptime(f.get('paciente_fecha_nac'), '%Y-%m-%d').date()
+
+            # 7. Construcción de Direcciones (Legacy + Nuevas)
             # Paciente
             p_calle = (f.get('paciente_calle') or '').strip()
             p_num = (f.get('paciente_numero') or '').strip()
@@ -118,11 +136,11 @@ def formulario():
             a_num = (f.get('acomp_numero') or '').strip()
             a_dom = f"{a_calle} #{a_num}".strip(" #") if (a_calle or a_num) else None
 
-            # 6. Creación del Objeto Caso
+            # 8. Creación del Objeto Caso
             nuevo_caso = Caso(
                 # Antecedentes
-                fecha_atencion=datetime.strptime(f.get('fecha_atencion'), '%Y-%m-%d').date(),
-                hora_atencion=datetime.strptime(f.get('hora_atencion'), '%H:%M').time() if f.get('hora_atencion') else None,
+                fecha_atencion=fecha_atencion_dt,
+                hora_atencion=hora_atencion_dt,
                 recinto_notifica_id=recinto_id_int,
                 recinto_otro_texto=recinto_texto,
                 folio_atencion=f.get('folio_atencion'),
@@ -133,14 +151,16 @@ def formulario():
                 # Paciente (Permite Nulos)
                 origen_nombres=f.get('paciente_nombres') or None,
                 origen_apellidos=f.get('paciente_apellidos') or None,
+                origen_rut=f.get('paciente_doc_numero') if f.get('paciente_doc_tipo') == 'RUT' else None, # Llenamos legacy
+                origen_fecha_nacimiento=fecha_nac_dt, # Llenamos legacy
 
-                # CORRECCIÓN: Asignación de Relato Obligatorio
+                # Asignación de Relato Obligatorio
                 origen_relato=relato,
                 
                 paciente_doc_tipo=f.get('paciente_doc_tipo'),
                 paciente_doc_numero=f.get('paciente_doc_numero'),
                 paciente_doc_otro_descripcion=f.get('paciente_doc_otro_desc') if f.get('paciente_doc_tipo') == 'OTRO' else None,
-                paciente_fecha_nacimiento=datetime.strptime(f.get('paciente_fecha_nac'), '%Y-%m-%d').date() if f.get('paciente_fecha_nac') else None,
+                paciente_fecha_nacimiento=fecha_nac_dt,
                 
                 # Direcciones
                 paciente_direccion_calle=p_calle,
@@ -162,10 +182,10 @@ def formulario():
 
                 # Denuncia
                 denuncia_realizada=denuncia_flag,
-                denuncia_institucion_id=inst_final_id,
-                denuncia_institucion_otro=inst_texto,
-                denuncia_profesional_nombre=f.get('denuncia_nombre'),
-                denuncia_profesional_cargo=f.get('denuncia_cargo'),
+                denuncia_institucion_id=denuncia_inst_id,
+                denuncia_institucion_otro=denuncia_inst_otro,
+                denuncia_profesional_nombre=denuncia_prof_nombre,
+                denuncia_profesional_cargo=denuncia_prof_cargo,
                 
                 vulneracion_otro_texto=vulneracion_texto,
                 estado='PENDIENTE_RESCATAR'
@@ -175,11 +195,11 @@ def formulario():
             for v_obj in objetos_vulneracion:
                 nuevo_caso.vulneraciones.append(v_obj)
 
-            # 7. Persistencia
+            # 9. Persistencia
             db.session.add(nuevo_caso)
             db.session.commit()
 
-            # 8. Trazabilidad y Notificaciones
+            # 10. Trazabilidad y Notificaciones
             registrar_log("Ingreso Caso", f"Caso #{nuevo_caso.folio_atencion} ingresado por {current_user.email}")
             
             # Enviar aviso a Referentes

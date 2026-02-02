@@ -2,8 +2,25 @@ import os
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
+
+# Diccionario de Labels para "Humanizar" los ENUMs
+LABELS = {
+    'PENDIENTE_REVISION': 'Pendiente por Revisar',
+    'CITACION_1': '1° Citación',
+    'CITACION_2': '2° Citación',
+    'CITACION_3': '3° Citación',
+    'AL_DIA': 'Al Día',
+    'PENDIENTE': 'Pendiente',
+    'INGRESADO': 'Ingresado',
+    'DERIVADO': 'Derivado',
+    'NO_CORRESPONDE': 'No corresponde'
+}
+
+def pretty(valor):
+    """Devuelve el texto bonito del ENUM o el valor original si no existe."""
+    return LABELS.get(valor, valor or '-')
 
 def generar_acta_cierre_pdf(caso, output_filename, usuario_cierre):
     """
@@ -15,10 +32,49 @@ def generar_acta_cierre_pdf(caso, output_filename, usuario_cierre):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    # 2. Configuración del Documento
-    doc = SimpleDocTemplate(output_filename, pagesize=LETTER)
+    # 2. Configuración del Documento con MÁRGENES PERSONALIZADOS
+    # El default es 72 puntos (1 pulgada). Lo bajamos a 30 para subir el contenido.
+    doc = SimpleDocTemplate(
+        output_filename, 
+        pagesize=LETTER,
+        rightMargin=50,
+        leftMargin=50,
+        topMargin=30,    # <--- ESTE ES EL CAMBIO CLAVE (Sube el contenido)
+        bottomMargin=30
+    )
     elements = []
     styles = getSampleStyleSheet()
+
+    # --- LOGOS (CABECERA) ---
+    # Calculamos ruta absoluta a static/img
+    # Asumiendo estructura: /utils/pdf_actas.py -> subir -> /static/img
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    logo1_path = os.path.join(base_dir, 'static', 'img', 'Logo_Red_APS_2.png')
+    logo2_path = os.path.join(base_dir, 'static', 'img', 'logoMaho.png')
+
+    # Tabla invisible para logos
+    if os.path.exists(logo1_path) and os.path.exists(logo2_path):
+        img1 = Image(logo1_path, width=120, height=50) # Ajusta tamaño según necesidad
+        img2 = Image(logo2_path, width=120, height=50)
+        # Ratio de aspecto se mantiene si solo fijas width o height, aquí fuerzo ambos
+        img1.hAlign = 'LEFT'
+        img2.hAlign = 'RIGHT'
+        
+        data_logos = [[img1, '', img2]]
+        t_logos = Table(data_logos, colWidths=[200, 140, 200])
+        t_logos.setStyle(TableStyle([
+            ('ALIGN', (0,0), (0,0), 'LEFT'),
+            ('ALIGN', (2,0), (2,0), 'RIGHT'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            # Eliminamos padding extra de la tabla de logos para que pegue bien arriba
+            ('TOPPADDING', (0,0), (-1,-1), 0),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+        ]))
+        elements.append(t_logos)
+        elements.append(Spacer(1, 10))
+    else:
+        # Fallback texto si no hay logos
+        elements.append(Paragraph("Red de Atención Primaria de Salud Municipal - Alto Hospicio", styles['Normal']))
 
     # Estilos Personalizados
     estilo_titulo = ParagraphStyle(
@@ -43,8 +99,6 @@ def generar_acta_cierre_pdf(caso, output_filename, usuario_cierre):
 
     # Encabezado
     elements.append(Paragraph(f"ACTA DE CIERRE DE CASO #{caso.folio_atencion}", estilo_titulo))
-    elements.append(Paragraph(f"Red de Atención Primaria de Salud Municipal - Alto Hospicio", styles['Normal']))
-    elements.append(Spacer(1, 20))
 
     # Tabla: Información General
     # Usamos la fecha real del objeto caso, formateada
@@ -106,14 +160,23 @@ def generar_acta_cierre_pdf(caso, output_filename, usuario_cierre):
 
     # Sección: Gestión Clínica
     elements.append(Paragraph("3. Gestión y Seguimiento", estilo_subtitulo))
+
+    recinto_txt = "-"
+    if caso.recinto_inscrito:
+        recinto_txt = caso.recinto_inscrito.nombre
+        # Lógica para mostrar texto "Otro"
+        if 'otro' in recinto_txt.lower() and caso.recinto_inscrito_otro_texto:
+            recinto_txt = f"{recinto_txt} ({caso.recinto_inscrito_otro_texto})"
+    elif caso.recinto_inscrito_otro_texto:
+        recinto_txt = caso.recinto_inscrito_otro_texto
     
     data_gestion = [
-        ['Recinto Inscrito:', caso.recinto_inscrito.nombre if caso.recinto_inscrito else (caso.recinto_inscrito_otro_texto or '-')],
-        ['Controles Salud:', caso.control_sanitario or '-'],
-        ['Vacunas:', caso.gestion_vacunas or '-'],
-        ['Informe Judicial:', caso.gestion_judicial or '-'],
-        ['Salud Mental:', caso.gestion_salud_mental or '-'],
-        ['COSAM:', caso.gestion_cosam or '-'],
+        ['Recinto Inscrito:', recinto_txt],
+        ['Controles Salud:', pretty(caso.control_sanitario) or '-'],
+        ['Vacunas:', pretty(caso.gestion_vacunas) or '-'],
+        ['Informe Judicial:', pretty(caso.gestion_judicial) or '-'],
+        ['Salud Mental:', pretty(caso.gestion_salud_mental) or '-'],
+        ['COSAM:', pretty(caso.gestion_cosam) or '-'],
     ]
     
     # Agregar info si falleció
@@ -134,10 +197,10 @@ def generar_acta_cierre_pdf(caso, output_filename, usuario_cierre):
     elements.append(Paragraph(obs, estilo_normal))
 
     # Footer
-    elements.append(Spacer(1, 40))
-    elements.append(Paragraph("_" * 40, styles['Normal']))
-    elements.append(Paragraph(f"Firma Responsable: {usuario_cierre.nombre_completo}", styles['Normal']))
-    elements.append(Paragraph(f"Cargo: {usuario_cierre.rol.nombre}", styles['Normal']))
+    #elements.append(Spacer(1, 40))
+    #elements.append(Paragraph("_" * 40, styles['Normal']))
+    #elements.append(Paragraph(f"Firma Responsable: {usuario_cierre.nombre_completo}", styles['Normal']))
+    #elements.append(Paragraph(f"Cargo: {usuario_cierre.rol.nombre}", styles['Normal']))
 
     # 3. Generar PDF
     doc.build(elements)

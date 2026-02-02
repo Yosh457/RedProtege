@@ -169,7 +169,11 @@ def ver_logs():
     # Acciones comunes en RedProtege
     acciones_posibles = ["Inicio de Sesión", "Cierre de Sesión", "Creación Usuario", 
                          "Edición Usuario", "Cambio Estado", "Cambio de Clave", 
-                         "Creación Caso", "Edición Caso", "Bloqueo Caso", "Desbloqueo Caso"]
+                         "Ingreso Caso", "Bloqueo Caso", "Desbloqueo Caso",
+                         "Login Fallido", "Solicitud Reseteo", "Solicitud Reseteo Fallida",
+                         "Recuperación Clave", "Asignación Caso", "Cierre Caso",
+                         "Email Asignación", "Error Email", "Error Crítico Email",
+                         "Seguridad", "Error Archivo", "Descargar Acta"]
 
     return render_template('admin/ver_logs.html', pagination=pagination,
                            todos_los_usuarios=todos_los_usuarios,

@@ -1,5 +1,5 @@
 import os
-from flask import Blueprint, render_template, abort, request, flash, redirect, url_for
+from flask import Blueprint, render_template, abort, request, flash, redirect, url_for, send_file
 from flask_login import login_required, current_user
 from sqlalchemy import case
 from models import db, Caso, Usuario, Rol, AuditoriaCaso, CatalogoEstablecimiento, obtener_hora_chile
@@ -100,8 +100,8 @@ def ver_caso(id):
     # --- 2. LÓGICA DE ASIGNACIÓN (Solo Admin/Referente) ---
     funcionarios_disponibles = []
     
-    # Solo Admin y Referente pueden asignar. Visualizador solo mira.
-    if rol_nombre in ['Admin', 'Referente']:
+    # Solo Admin y Referente pueden asignar. Visualizador solo mira. Si el caso está cerrado, no se procesa asignación.
+    if rol_nombre in ['Admin', 'Referente'] and caso.estado != 'CERRADO':
         
         # Cargar lista de funcionarios para el select
         q_func = Usuario.query.join(Rol).filter(Rol.nombre == 'Funcionario').filter(Usuario.activo == True)
@@ -114,6 +114,11 @@ def ver_caso(id):
 
         # Procesar Formulario de Asignación
         if request.method == 'POST' and 'asignar_funcionario' in request.form:
+            # Doble check por si forzaron el POST
+            if caso.estado == 'CERRADO':
+                flash('El caso está cerrado. No se puede asignar', 'danger')
+                return redirect(url_for('casos.ver_caso', id=caso.id))
+            
             nuevo_asignado_id = request.form.get('funcionario_id')
             
             if nuevo_asignado_id:
@@ -226,6 +231,11 @@ def gestionar_caso(id):
     """
     caso = Caso.query.get_or_404(id)
     rol_nombre = current_user.rol.nombre
+
+    #Si el caso está cerrado, se expulsa inmediatamente
+    if caso.estado == 'CERRADO':
+        flash('El caso ya está cerrado. No es posible editar la gestión.', 'danger')
+        return redirect(url_for('casos.ver_caso', id=caso.id))
 
     # 1. Validar Permisos para GESTIONAR (Más estricto que ver)
     puede_gestionar = False
@@ -388,3 +398,96 @@ def cerrar_caso(id):
         flash(f'Error crítico al cerrar el caso: {str(e)}', 'danger')
 
     return redirect(url_for('casos.ver_caso', id=caso.id))
+
+# --- RUTA DESCARGA SEGURA DE ACTA (PRODUCCIÓN) ---
+@casos_bp.route('/acta/<int:id>', methods=['GET'])
+@login_required
+def descargar_acta(id):
+    """
+    Endpoint protegido para descargar el PDF del acta.
+    Incluye protección robusta contra Path Traversal, auditoría de descarga
+    y validación de permisos extendida (asignado o cerrador).
+    """
+    caso = Caso.query.get_or_404(id)
+    rol_nombre = current_user.rol.nombre
+
+    # 1. VALIDACIÓN DE PERMISOS
+    permitido = False
+    
+    if rol_nombre == 'Admin':
+        permitido = True
+        
+    elif rol_nombre in ['Referente', 'Visualizador']:
+        # Permiso si es Global o del ciclo del caso
+        if current_user.ciclo_asignado_id is None or caso.ciclo_vital_id == current_user.ciclo_asignado_id:
+            permitido = True
+            
+    elif rol_nombre == 'Funcionario':
+        # AJUSTE PERMISOS: Permitido si es el asignado actual O quien cerró el caso
+        es_asignado = (caso.asignado_a_usuario_id == current_user.id)
+        es_quien_cerro = (caso.usuario_cierre_id == current_user.id)
+        
+        if es_asignado or es_quien_cerro:
+            permitido = True
+            
+    if not permitido:
+        flash("No tienes permisos para descargar este documento.", "danger")
+        return redirect(url_for('casos.index'))
+
+    # 2. VALIDAR EXISTENCIA EN BD
+    if not caso.acta_pdf_path:
+        flash('El caso no tiene un acta generada.', 'warning')
+        return redirect(url_for('casos.ver_caso', id=caso.id))
+
+    try:
+        # 3. CONSTRUCCIÓN Y SEGURIDAD DE RUTA (PATH TRAVERSAL ROBUSTO)
+        
+        # Base del proyecto (un nivel arriba de blueprints/)
+        BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        
+        # Limpiamos la ruta relativa de BD
+        ruta_relativa = caso.acta_pdf_path.replace('\\', '/').lstrip('/')
+        
+        # Resolvemos la ruta absoluta final del archivo solicitado
+        path_absoluto = os.path.abspath(os.path.join(BASE_DIR, ruta_relativa))
+        
+        # Definimos la "jaula" autorizada (carpeta actas)
+        carpeta_actas = os.path.abspath(os.path.join(BASE_DIR, 'uploads', 'actas'))
+
+        # AJUSTE 1: Validación estricta con os.sep para evitar falsos positivos
+        # Aseguramos que la ruta comience con "carpeta_actas/" (o "\" en Windows)
+        # Esto evita que 'uploads/actas_secretas' pase el filtro de 'uploads/actas'
+        carpeta_con_sep = os.path.join(carpeta_actas, '') # Agrega el separador al final (/ o \)
+        
+        if not path_absoluto.startswith(carpeta_con_sep):
+            registrar_log("Seguridad", f"ALERTA: Intento de Path Traversal por {current_user.email}. Path: {path_absoluto}")
+            abort(403) # Acceso Prohibido
+
+        # 4. VERIFICAR ARCHIVO FÍSICO
+        if not os.path.exists(path_absoluto):
+            registrar_log("Error Archivo", f"Acta no encontrada en disco: {path_absoluto}")
+            flash('El archivo físico del acta no se encuentra en el servidor.', 'danger')
+            return redirect(url_for('casos.ver_caso', id=caso.id))
+
+        # AJUSTE 2: Auditoría de la descarga (Trazabilidad)
+        # Registramos quién descargó el archivo y de qué caso antes de enviarlo
+        registrar_log(
+            "Descarga Acta", 
+            f"Usuario={current_user.email} descargó el acta del Caso={caso.id} - Folio={caso.folio_atencion}"
+        )
+
+        # AJUSTE 3: Nombre de archivo amigable para el usuario
+        # Genera "Acta_Cierre_FOLIO.pdf" en lugar de "acta_1_FOLIO.pdf" (interno)
+        nombre_descarga = f"Acta_Cierre_{caso.folio_atencion or caso.id}.pdf"
+
+        # 5. SERVIR ARCHIVO
+        return send_file(
+            path_absoluto,
+            as_attachment=True,
+            download_name=nombre_descarga
+        )
+
+    except Exception as e:
+        print(f"Error sirviendo archivo: {e}")
+        flash('Error interno al intentar descargar el archivo.', 'danger')
+        return redirect(url_for('casos.ver_caso', id=caso.id))
