@@ -436,23 +436,58 @@
                     </div>
                 {% endif %}
 
-                <div class="mt-6 border-t pt-4">
-                    <h4 class="font-bold text-sm text-gray-700 mb-2">Historial (últimos movimientos)</h4>
+                <div class="mt-8 border-t pt-6">
+                    <h4 class="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Bitácora de Movimientos
+                    </h4>
 
-                    {% set ultimos = caso.auditorias[-5:] if caso.auditorias else [] %}
-                    {% if ultimos %}
-                        <ul class="text-xs text-gray-500 space-y-2">
-                            {% for audit in ultimos|reverse %}
-                            <li class="border-b pb-1">
-                                <span class="font-bold">{{ audit.accion }}</span>
-                                {% if audit.usuario %}por {{ audit.usuario.nombre_completo }}{% endif %}
-                                <br>
-                                {{ audit.fecha_movimiento.strftime('%d/%m %H:%M') if audit.fecha_movimiento else '-' }}
-                            </li>
-                            {% endfor %}
-                        </ul>
+                    {% set auditorias = caso.auditorias|sort(attribute='fecha_movimiento', reverse=True) %}
+                    
+                    {% if auditorias %}
+                    <div class="relative border-l-2 border-gray-200 ml-3 space-y-6">
+                        {% for audit in auditorias %} {% set estilo = audit.estilo_visual %}
+                            <div class="mb-8 ml-6 relative group">
+                                <span class="absolute -left-10 flex items-center justify-center w-8 h-8 rounded-full ring-4 ring-white {{ estilo.color_bg }} {{ estilo.color_text }}">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ estilo.icono }}"></path>
+                                    </svg>
+                                </span>
+                                
+                                <div class="bg-white rounded-lg border border-gray-100 shadow-sm p-3 hover:shadow-md transition-shadow">
+                                    <div class="flex justify-between items-start">
+                                        <div>
+                                            <h5 class="text-sm font-bold text-gray-800">{{ estilo.titulo }}</h5>
+                                            <p class="text-xs text-gray-500 mt-0.5">
+                                                Por: <span class="font-medium text-gray-700">{{ audit.usuario.nombre_completo if audit.usuario else 'Sistema' }}</span>
+                                            </p>
+                                        </div>
+                                        <span class="text-xs text-gray-400 whitespace-nowrap bg-gray-50 px-2 py-1 rounded">
+                                            {{ audit.fecha_movimiento.strftime('%d/%m %H:%M') }}
+                                        </span>
+                                    </div>
+
+                                    {% if audit.detalles_cambio %}
+                                        <div class="mt-2 text-xs text-gray-600 bg-gray-50 p-2 rounded border border-gray-100">
+                                            {% if audit.detalles_cambio is mapping %}
+                                                {# Si es un diccionario JSON #}
+                                                <ul class="list-disc list-inside">
+                                                {% for k, v in audit.detalles_cambio.items() %}
+                                                    <li><strong>{{ k|replace('_', ' ')|title }}:</strong> {{ v }}</li>
+                                                {% endfor %}
+                                                </ul>
+                                            {% else %}
+                                                {# Si es texto plano #}
+                                                {{ audit.detalles_cambio }}
+                                            {% endif %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
                     {% else %}
-                        <p class="text-xs text-gray-400 italic">Sin movimientos registrados.</p>
+                        <p class="text-sm text-gray-500 italic pl-4">No hay movimientos registrados en la bitácora.</p>
                     {% endif %}
                 </div>
             </div>

@@ -237,3 +237,54 @@ class AuditoriaCaso(db.Model):
     
     caso = db.relationship('Caso', back_populates='auditorias')
     usuario = db.relationship('Usuario')
+
+    # --- NUEVO: Propiedad para dar formato visual en el Frontend ---
+    @property
+    def estilo_visual(self):
+        """
+        Retorna configuración de colores e íconos según el tipo de acción.
+        """
+        config = {
+            'color_bg': 'bg-gray-100',
+            'color_text': 'text-gray-600',
+            'icono': 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z', # Info (default)
+            'titulo': self.accion.replace('_', ' ').title()
+        }
+
+        if self.accion in ['ASIGNACION', 'REASIGNACION']:
+            config = {
+                'color_bg': 'bg-green-100',
+                'color_text': 'text-green-600',
+                'icono': 'M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z', # User Add
+                'titulo': 'Asignación de Profesional'
+            }
+        elif self.accion == 'GESTION_CLINICA':
+            config = {
+                'color_bg': 'bg-blue-100',
+                'color_text': 'text-blue-600',
+                'icono': 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2', # Clipboard
+                'titulo': 'Gestión Clínica Realizada'
+            }
+        elif self.accion == 'CIERRE_CASO':
+            config = {
+                'color_bg': 'bg-red-100',
+                'color_text': 'text-red-600',
+                'icono': 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z', # Lock
+                'titulo': 'Cierre del Caso'
+            }
+        elif 'EMAIL' in self.accion:
+            config = {
+                'color_bg': 'bg-yellow-100',
+                'color_text': 'text-yellow-600',
+                'icono': 'M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z', # Mail
+                'titulo': 'Notificación por Correo'
+            }
+        elif 'INGRESO' in self.accion or 'CREACION' in self.accion:
+             config = {
+                'color_bg': 'bg-purple-100',
+                'color_text': 'text-purple-600',
+                'icono': 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z', # Edit/Create
+                'titulo': 'Ingreso del Caso'
+            }
+
+        return config
