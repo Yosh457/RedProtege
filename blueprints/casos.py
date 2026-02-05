@@ -1,7 +1,7 @@
 import os
 from flask import Blueprint, render_template, abort, request, flash, redirect, url_for, send_file
 from flask_login import login_required, current_user
-from sqlalchemy import case
+from sqlalchemy import case, or_
 from models import db, Caso, Usuario, Rol, AuditoriaCaso, CatalogoEstablecimiento, CatalogoInstitucion, obtener_hora_chile
 from utils import check_password_change, registrar_log, enviar_aviso_asignacion, generar_acta_cierre_pdf, enviar_aviso_cierre, es_rut_valido
 from datetime import datetime
@@ -53,39 +53,53 @@ def before_request():
 def index():
     """
     Bandeja de Entrada de Casos.
-    Aplica filtros de seguridad según el Rol del usuario.
+    Aplica filtros de seguridad, búsqueda y ordenamiento.
     """
     page = request.args.get('page', 1, type=int)
+    search_query = request.args.get('search', '').strip() # Capturamos el texto del buscador
+    estado_filter = request.args.get('estado', '').strip() # Capturamos filtro por estado
+    
     query = Caso.query
     
     rol_nombre = current_user.rol.nombre
     titulo_vista = "Vista Global"
 
-    # --- 1. REGLAS DE VISIBILIDAD (FILTROS) ---
-    
+    # --- 1. REGLAS DE VISIBILIDAD (SEGURIDAD) ---
     if rol_nombre == 'Admin':
-        # Ve todo sin filtro
         pass
-
     elif rol_nombre in ['Referente', 'Visualizador']:
-        # Si tiene ciclo asignado, filtra. Si es NULL, ve todo (Global).
         if current_user.ciclo_asignado_id:
             query = query.filter(Caso.ciclo_vital_id == current_user.ciclo_asignado_id)
             titulo_vista = f"Ciclo {current_user.ciclo_asignado.nombre}"
         else:
             titulo_vista = "Vista Global (Todos los Ciclos)"
-
     elif rol_nombre == 'Funcionario':
-        # Solo ve lo que le asignaron explícitamente a él
         query = query.filter(Caso.asignado_a_usuario_id == current_user.id)
         titulo_vista = "Mis Casos Asignados"
-    
     else:
-        # Rol desconocido o sin permiso base
         abort(403)
 
-    # --- 2. ORDENAMIENTO POR PRIORIDAD ---
-    # Prioridad: PENDIENTE_RESCATAR (0) -> EN_SEGUIMIENTO (1) -> CERRADO (2)
+    # --- 2. MOTOR DE BÚSQUEDA (NUEVO) ---
+    if search_query:
+        # Normalizamos un poco para el RUT (quitamos puntos si el usuario los puso)
+        search_clean = search_query.replace('.', '')
+        search_pattern = f"%{search_clean}%"
+
+        # Busca coincidencias en cualquiera de estos campos
+        query = query.filter(or_(
+            Caso.folio_atencion.ilike(search_pattern),           # Folio
+            Caso.origen_nombres.ilike(search_pattern),           # Nombres (origen)
+            Caso.origen_apellidos.ilike(search_pattern),         # Apellidos (origen)
+            Caso.paciente_doc_numero.ilike(search_pattern),      # RUT/Doc (nuevo)
+            Caso.origen_rut.ilike(search_pattern),               # RUT (legacy)
+            Caso.acompanante_nombre.ilike(search_pattern)        # Nombre Acompañante
+        ))
+
+    # --- 3. FILTRO POR ESTADO (NUEVO) ---
+    if estado_filter:
+        query = query.filter(Caso.estado == estado_filter)
+
+    # --- 4. ORDENAMIENTO POR PRIORIDAD ---
     orden_estado = case(
         (Caso.estado == 'PENDIENTE_RESCATAR', 0),
         (Caso.estado == 'EN_SEGUIMIENTO', 1),
@@ -93,7 +107,8 @@ def index():
         else_=3
     )
 
-    # Aplicamos orden: Estado Prioritario -> Fecha más reciente
+    # --- 5. PAGINACIÓN ---
+    # Mantenemos el filtro en la paginación para que no se pierda al cambiar de página
     pagination = query.order_by(
         orden_estado, 
         Caso.fecha_ingreso.desc()

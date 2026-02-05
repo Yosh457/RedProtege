@@ -48,7 +48,7 @@
                     </div>
 
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Nº Folio Atención *</label>
+                        <label class="block text-sm font-medium text-gray-700">Nº Folio Atención (DAU) *</label>
                         <input type="text" name="folio_atencion" value="{{ datos.folio_atencion if datos else '' }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required>
                     </div>
 
@@ -88,17 +88,7 @@
                     Datos del Paciente
                 </h2>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Ciclo Vital *</label>
-                        <select name="ciclo_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-white" required>
-                            <option value="">Seleccione...</option>
-                            {% for c in ciclos %}
-                                <option value="{{ c.id }}">{{ c.nombre }} ({{ c.rango_descripcion }})</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
+                
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
                     <div>
@@ -111,28 +101,28 @@
                         </select>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Nº Documento *</label>
+                        <label class="block text-sm font-medium text-gray-700">Nº Documento (Sin puntos y con guión)</label>
                         <input type="text" name="paciente_doc_numero" id="paciente_doc_numero" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
                         <p class="text-xs text-red-500 mt-1 hidden" id="error_rut_paciente">RUT Inválido</p>
                     </div>
                     <div id="div_paciente_otro_doc" class="hidden">
-                        <label class="block text-sm font-medium text-gray-700">Especifique Doc.</label>
+                        <label class="block text-sm font-medium text-gray-700">Especifique Documento+</label>
                         <input type="text" name="paciente_doc_otro_desc" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
                     </div>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Nombres *</label>
+                        <label class="block text-sm font-medium text-gray-700">Nombres</label>
                         <input type="text" name="paciente_nombres" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Apellidos *</label>
+                        <label class="block text-sm font-medium text-gray-700">Apellidos</label>
                         <input type="text" name="paciente_apellidos" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Fecha Nacimiento *</label>
                         <input type="date" name="paciente_fecha_nac" id="paciente_fecha_nac" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required onchange="calcularEdad()">
@@ -143,11 +133,20 @@
                             <div class="text-lg font-bold text-gray-800" id="paciente_edad_display">-- años</div>
                         </div>
                     </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Ciclo Vital *</label>
+                        <select name="ciclo_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-white" required>
+                            <option value="">Seleccione...</option>
+                            {% for c in ciclos %}
+                                <option value="{{ c.id }}">{{ c.nombre }} ({{ c.rango_descripcion }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
                     <div class="md:col-span-2">
-                        <label class="block text-sm font-medium text-gray-700">Calle / Pasaje / Avenida *</label>
+                        <label class="block text-sm font-medium text-gray-700">Dirección Paciente (Calle / Pasaje / Avenida) *</label>
                         <input type="text" name="paciente_calle" value="{{ datos.paciente_calle if datos else '' }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required placeholder="Ej: Av. Los Aromos">
                     </div>
                     <div>
@@ -198,7 +197,7 @@
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Tipo Doc.</label>
+                        <label class="block text-sm font-medium text-gray-700">Tipo Documento</label>
                         <select name="acomp_doc_tipo" id="acomp_doc_tipo" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-white" onchange="toggleDocInput('acomp')">
                             <option value="RUT">RUT</option>
                             <option value="DNI">DNI</option>
@@ -211,14 +210,14 @@
                         <input type="text" name="acomp_doc_numero" id="acomp_doc_numero" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
                     </div>
                     <div id="div_acomp_otro_doc" class="hidden">
-                         <label class="block text-sm font-medium text-gray-700">Desc.</label>
+                         <label class="block text-sm font-medium text-gray-700">Especifique Documento</label>
                          <input type="text" name="acomp_doc_otro_desc" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
                     </div>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div class="md:col-span-2">
-                        <label class="block text-sm font-medium text-gray-700">Calle Acompañante</label>
+                        <label class="block text-sm font-medium text-gray-700">Dirección Acompañante (Calle / Pasaje / Avenida)</label>
                         <input type="text" name="acomp_calle" value="{{ datos.acomp_calle if datos else '' }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
                     </div>
                     <div>
@@ -263,10 +262,10 @@
                             </div>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Nombre Profesional</label>
+                            <label class="block text-sm font-medium text-gray-700">Nombre Profesional (Quién realiza denuncia)</label>
                             <input type="text" name="denuncia_nombre" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
                         </div>
-                         <div>
+                        <div>
                             <label class="block text-sm font-medium text-gray-700">Cargo Profesional</label>
                             <input type="text" name="denuncia_cargo" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
                         </div>

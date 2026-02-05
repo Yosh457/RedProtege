@@ -1,97 +1,169 @@
 {% extends "base.html" %}
+
 {% block title %}Bandeja de Casos{% endblock %}
-{% from '_macros.html' import render_pagination %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto my-12 px-4 sm:px-0">
-    <div class="bg-white rounded-xl shadow-lg overflow-hidden">
-        <div class="p-6 border-b flex justify-between items-center bg-gray-50">
-            <div>
-                <h2 class="text-2xl font-bold text-gray-800">Bandeja de Casos</h2>
-                <p class="text-sm text-gray-500">
-                    Filtrado por: <span class="font-bold text-blue-600">{{ nombre_filtro }}</span>
-                </p>
-            </div>
-            {# Aquí irá el buscador luego #}
+<div class="max-w-7xl mx-auto my-8 px-4">
+    
+    <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-800">Bandeja de Casos</h1>
+            <p class="text-sm text-gray-500 mt-1">Filtrado por: <span class="font-semibold text-blue-600">{{ nombre_filtro }}</span></p>
         </div>
+        
+        {% if current_user.rol.nombre in ['Admin', 'Referente', 'Solicitante'] %}
+        <a href="{{ url_for('solicitudes.formulario') }}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            Nuevo Caso
+        </a>
+        {% endif %}
+    </div>
 
-        <table class="min-w-full bg-white">
-            <thead class="bg-gray-100">
+    <div class="bg-white p-4 rounded-lg shadow-sm mb-6 border border-gray-200">
+        <form method="GET" action="{{ url_for('casos.index') }}" class="flex flex-col md:flex-row gap-4">
+            
+            <div class="flex-grow relative">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                    </svg>
+                </div>
+                <input type="text" name="search" value="{{ request.args.get('search', '') }}" 
+                       class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" 
+                       placeholder="Buscar por Folio, RUT, Nombre...">
+            </div>
+
+            <div class="w-full md:w-48">
+                <select name="estado" class="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                    <option value="">Todos los Estados</option>
+                    <option value="PENDIENTE_RESCATAR" {% if request.args.get('estado') == 'PENDIENTE_RESCATAR' %}selected{% endif %}>Pendiente rescatar</option>
+                    <option value="EN_SEGUIMIENTO" {% if request.args.get('estado') == 'EN_SEGUIMIENTO' %}selected{% endif %}>En seguimiento</option>
+                    <option value="CERRADO" {% if request.args.get('estado') == 'CERRADO' %}selected{% endif %}>Cerrado</option>
+                </select>
+            </div>
+
+            <div class="flex gap-2">
+                <button type="submit" class="bg-gray-800 text-white px-4 py-2 rounded-md hover:bg-gray-700 text-sm font-medium transition shadow-sm">
+                    Filtrar
+                </button>
+                
+                {% if request.args.get('search') or request.args.get('estado') %}
+                    <a href="{{ url_for('casos.index') }}" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 text-sm font-medium transition flex items-center shadow-sm">
+                        Limpiar
+                    </a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    <div class="bg-white shadow overflow-hidden rounded-lg border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
                 <tr>
-                    <th class="py-3 px-4 text-left text-sm font-semibold">Fecha Ingreso</th>
-                    <th class="py-3 px-4 text-left text-sm font-semibold">Documento</th>
-                    <th class="py-3 px-4 text-left text-sm font-semibold">Paciente</th>
-                    <th class="py-3 px-4 text-left text-sm font-semibold">Ciclo</th>
-                    <th class="py-3 px-4 text-left text-sm font-semibold">Asignado a</th>
-                    <th class="py-3 px-4 text-center text-sm font-semibold">Estado</th>
-                    <th class="py-3 px-4 text-center text-sm font-semibold">Acciones</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha Ingreso</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Folio</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Documento</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Paciente</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ciclo</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Asignado a</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
+                    <th scope="col" class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody class="bg-white divide-y divide-gray-200">
                 {% for caso in pagination.items %}
-                <tr class="border-b hover:bg-gray-50">
-                    <td class="py-3 px-4">
-                        {{ caso.fecha_ingreso.strftime('%d-%m-%Y %H:%M') if caso.fecha_ingreso else '-' }}
+                <tr class="hover:bg-gray-50 transition">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {{ caso.fecha_ingreso.strftime('%d-%m-%Y %H:%M') }}
                     </td>
-
-                    <td class="py-3 px-4 font-mono">
-                        {% if caso.paciente_doc_tipo and caso.paciente_doc_numero %}
-                            {{ caso.paciente_doc_tipo }}: {{ caso.paciente_doc_numero }}
-                        {% elif caso.origen_rut %}
-                            RUT: {{ caso.origen_rut }}
-                        {% else %}
-                            <span class="text-gray-400 text-xs italic">Sin ID</span>
-                        {% endif %}
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-700">
+                        #{{ caso.folio_atencion }}
                     </td>
-
-                    <td class="py-3 px-4">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {{ caso.paciente_doc_tipo or 'RUT' }}: {{ caso.paciente_doc_numero or caso.origen_rut or 'S/I' }}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {{ caso.origen_nombres }} {{ caso.origen_apellidos }}
                     </td>
-
-                    <td class="py-3 px-4">
-                        <span class="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded">
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">
                             {{ caso.ciclo_vital.nombre }}
                         </span>
                     </td>
-
-                    <td class="py-3 px-4">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {% if caso.asignado_a %}
-                            <span class="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
-                                {{ caso.asignado_a.nombre_completo }}
-                            </span>
+                            <span class="bg-green-100 text-green-800 text-xs px-2 py-1 rounded font-bold">{{ caso.asignado_a.nombre_completo }}</span>
                         {% else %}
-                            <span class="text-gray-400 text-xs italic">Sin asignar</span>
+                            <span class="text-gray-400 italic text-xs">Sin asignar</span>
                         {% endif %}
                     </td>
-
-                    <td class="py-3 px-4 text-center">
-                        <span class="px-2 py-1 rounded text-xs font-bold
-                            {% if caso.estado == 'PENDIENTE_RESCATAR' %}bg-yellow-100 text-yellow-800
-                            {% elif caso.estado == 'EN_SEGUIMIENTO' %}bg-blue-100 text-blue-800
-                            {% else %}bg-gray-200 text-gray-800{% endif %}">
-                            {% if caso.estado == 'PENDIENTE_RESCATAR' %}Pendiente rescatar
-                            {% elif caso.estado == 'EN_SEGUIMIENTO' %}En seguimiento
-                            {% else %}Cerrado{% endif %}
-                        </span>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        {% if caso.estado == 'PENDIENTE_RESCATAR' %}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                                Pendiente rescatar
+                            </span>
+                        {% elif caso.estado == 'EN_SEGUIMIENTO' %}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                                En seguimiento
+                            </span>
+                        {% elif caso.estado == 'CERRADO' %}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800">
+                                Cerrado
+                            </span>
+                        {% endif %}
                     </td>
-
-                    <td class="py-3 px-4 text-center">
-                        <a href="{{ url_for('casos.ver_caso', id=caso.id) }}" class="btn btn-primary text-xs">
-                            Ver Caso
-                        </a>
+                    <td class="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
+                        <a href="{{ url_for('casos.ver_caso', id=caso.id) }}" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition">Ver Caso</a>
                     </td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="7" class="text-center py-8 text-gray-500">
-                        No hay casos registrados en esta vista.
+                    <td colspan="8" class="px-6 py-10 text-center text-gray-500">
+                        <p class="text-lg">No se encontraron casos.</p>
+                        {% if request.args.get('search') %}
+                            <p class="text-sm">Prueba con otros términos de búsqueda.</p>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
+    </div>
 
-        {{ render_pagination(pagination, 'casos.index') }}
+    <div class="mt-4 flex justify-center">
+        {% if pagination.pages > 1 %}
+        <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+            {% if pagination.has_prev %}
+                <a href="{{ url_for('casos.index', page=pagination.prev_num, search=request.args.get('search', ''), estado=request.args.get('estado', '')) }}" class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                    <span>Anterior</span>
+                </a>
+            {% endif %}
+
+            {% for p in pagination.iter_pages() %}
+                {% if p %}
+                    {% if p == pagination.page %}
+                        <span class="relative inline-flex items-center px-4 py-2 border border-blue-500 bg-blue-50 text-sm font-medium text-blue-600">
+                            {{ p }}
+                        </span>
+                    {% else %}
+                        <a href="{{ url_for('casos.index', page=p, search=request.args.get('search', ''), estado=request.args.get('estado', '')) }}" class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
+                            {{ p }}
+                        </a>
+                    {% endif %}
+                {% else %}
+                    <span class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">...</span>
+                {% endif %}
+            {% endfor %}
+
+            {% if pagination.has_next %}
+                <a href="{{ url_for('casos.index', page=pagination.next_num, search=request.args.get('search', ''), estado=request.args.get('estado', '')) }}" class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                    <span>Siguiente</span>
+                </a>
+            {% endif %}
+        </nav>
+        {% endif %}
     </div>
 </div>
 {% endblock %}
