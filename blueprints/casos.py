@@ -2,8 +2,8 @@ import os
 from flask import Blueprint, render_template, abort, request, flash, redirect, url_for, send_file
 from flask_login import login_required, current_user
 from sqlalchemy import case
-from models import db, Caso, Usuario, Rol, AuditoriaCaso, CatalogoEstablecimiento, obtener_hora_chile
-from utils import check_password_change, registrar_log, enviar_aviso_asignacion, generar_acta_cierre_pdf, enviar_aviso_cierre
+from models import db, Caso, Usuario, Rol, AuditoriaCaso, CatalogoEstablecimiento, CatalogoInstitucion, obtener_hora_chile
+from utils import check_password_change, registrar_log, enviar_aviso_asignacion, generar_acta_cierre_pdf, enviar_aviso_cierre, es_rut_valido
 from datetime import datetime
 
 casos_bp = Blueprint('casos', __name__, template_folder='../templates', url_prefix='/casos')
@@ -14,6 +14,34 @@ def safe_int(value):
         return int(value)
     except (ValueError, TypeError):
         return None
+
+def clean(value):
+    """Convierte '' / espacios a None (para guardar NULL en BD)."""
+    if value is None:
+        return None
+    v = str(value).strip()
+    return v if v else None
+
+def clean_rut(value):
+    """Normaliza RUT: sin puntos/espacios y con guion (12345678-9)."""
+    v = clean(value)
+    if not v:
+        return None
+    v = v.replace(".", "").replace(" ", "").upper()
+    # Si viene con guion, lo respetamos; si no, lo armamos.
+    if "-" in v:
+        cuerpo, dv = v.split("-", 1)
+    else:
+        if len(v) < 2:
+            return None
+        cuerpo, dv = v[:-1], v[-1]
+    cuerpo = "".join(ch for ch in cuerpo if ch.isdigit())
+    dv = (dv[:1] or "").upper()
+    return f"{cuerpo}-{dv}" if cuerpo and dv else None
+
+def rut_excede_largo(rut_normalizado):
+    """Protege contra Data too long. Formato máximo esperado: 12345678-9 (10 chars)."""
+    return bool(rut_normalizado) and len(rut_normalizado) > 10
 
 @casos_bp.before_request
 @login_required
@@ -250,6 +278,7 @@ def gestionar_caso(id):
 
     # Cargar catálogos necesarios para el formulario de gestión
     establecimientos = CatalogoEstablecimiento.query.filter_by(activo=True).order_by(CatalogoEstablecimiento.nombre).all()
+    instituciones = CatalogoInstitucion.query.filter_by(activo=True).order_by(CatalogoInstitucion.nombre).all()  # Para denuncia
 
     if request.method == 'POST':
         try:
@@ -261,6 +290,133 @@ def gestionar_caso(id):
                 caso.origen_nombres = request.form.get('nombres_edit')
             if not caso.origen_apellidos:
                 caso.origen_apellidos = request.form.get('apellidos_edit')
+
+            # A2) Completar / Actualizar Datos PACIENTE (opcionales)
+            # Nota: Solo rellenamos si viene dato. No sobreescribimos con vacío.
+            # Documento
+            doc_tipo = request.form.get('paciente_doc_tipo')
+            doc_num_raw = request.form.get('paciente_doc_numero')
+
+            if doc_tipo:
+                caso.paciente_doc_tipo = doc_tipo
+
+            doc_num_clean = clean(doc_num_raw)
+            if doc_num_clean:
+                # Si es RUT, normalizamos + validamos (Módulo 11) + largo
+                if (doc_tipo == 'RUT'):
+                    rut_norm = clean_rut(doc_num_clean)
+                    if rut_excede_largo(rut_norm):
+                        flash('El RUT del paciente es demasiado largo.', 'danger')
+                        return redirect(url_for('casos.gestionar_caso', id=caso.id))
+                    if not es_rut_valido(rut_norm):
+                        flash('El RUT del paciente no es válido.', 'danger')
+                        return redirect(url_for('casos.gestionar_caso', id=caso.id))
+                    caso.paciente_doc_numero = rut_norm
+                    caso.origen_rut = rut_norm  # Legacy consistente
+                else:
+                    caso.paciente_doc_numero = doc_num_clean
+
+            # Otro Doc (solo si tipo OTRO y viene descripción)
+            if doc_tipo == 'OTRO':
+                otro_desc = clean(request.form.get('paciente_doc_otro_desc'))
+                if otro_desc:
+                    caso.paciente_doc_otro_descripcion = otro_desc
+
+            # Fecha nacimiento (si venía vacía y ahora la completan)
+            if not caso.paciente_fecha_nacimiento and request.form.get('paciente_fecha_nacimiento'):
+                caso.paciente_fecha_nacimiento = datetime.strptime(request.form.get('paciente_fecha_nacimiento'), '%Y-%m-%d').date()
+
+            # Dirección paciente (si venía vacía y ahora la completan)
+            p_calle_new = clean(request.form.get('paciente_calle'))
+            p_num_new = clean(request.form.get('paciente_numero'))
+            if p_calle_new is not None:
+                caso.paciente_direccion_calle = p_calle_new
+            if p_num_new is not None:
+                caso.paciente_direccion_numero = p_num_new
+
+            # Reconstruir domicilio si tenemos al menos una parte
+            p_calle = caso.paciente_direccion_calle
+            p_num = caso.paciente_direccion_numero
+            caso.paciente_domicilio = f"{p_calle} #{p_num}".strip(" #") if (p_calle or p_num) else None
+
+            # A3) Completar / Actualizar DENUNCIA (permite completar datos faltantes)
+            # Si el usuario cambia a "NO", limpiamos todo.
+            if request.form.get('denuncia_realizada') is not None:
+                denuncia_flag = (request.form.get('denuncia_realizada') == '1')
+                caso.denuncia_realizada = denuncia_flag
+
+                if not denuncia_flag:
+                    caso.denuncia_institucion_id = None
+                    caso.denuncia_institucion_otro = None
+                    caso.denuncia_profesional_nombre = None
+                    caso.denuncia_profesional_cargo = None
+                else:
+                    inst_id_int = safe_int(request.form.get('institucion_id'))
+                    caso.denuncia_institucion_id = inst_id_int
+
+                    caso.denuncia_institucion_otro = None
+                    if inst_id_int:
+                        inst_obj = CatalogoInstitucion.query.get(inst_id_int)
+                        if inst_obj and 'otro' in inst_obj.nombre.lower():
+                            caso.denuncia_institucion_otro = clean(request.form.get('institucion_otro'))
+
+                    nombre_prof = clean(request.form.get('denuncia_nombre'))
+                    cargo_prof = clean(request.form.get('denuncia_cargo'))
+                    if nombre_prof is not None:
+                        caso.denuncia_profesional_nombre = nombre_prof
+                    if cargo_prof is not None:
+                        caso.denuncia_profesional_cargo = cargo_prof
+
+            # A4) Completar / Actualizar ACOMPAÑANTE (permite completar datos faltantes)
+            # Nota: Solo rellenamos si viene dato. No sobreescribimos con vacío.
+            acomp_nombre = clean(request.form.get('acomp_nombre'))
+            acomp_parentesco = clean(request.form.get('acomp_parentesco'))
+            acomp_tel = clean(request.form.get('acomp_telefono'))
+            acomp_tel_tipo = request.form.get('acomp_tel_tipo')
+
+            if acomp_nombre is not None:
+                caso.acompanante_nombre = acomp_nombre
+            if acomp_parentesco is not None:
+                caso.acompanante_parentesco = acomp_parentesco
+            if acomp_tel is not None:
+                caso.acompanante_telefono = acomp_tel
+            if acomp_tel_tipo:
+                caso.acompanante_telefono_tipo = acomp_tel_tipo
+
+            acomp_doc_tipo = request.form.get('acomp_doc_tipo')
+            if acomp_doc_tipo:
+                caso.acompanante_doc_tipo = acomp_doc_tipo
+
+            acomp_doc_num_raw = request.form.get('acomp_doc_numero')
+            acomp_doc_num_clean = clean(acomp_doc_num_raw)
+            if acomp_doc_num_clean:
+                if acomp_doc_tipo == 'RUT':
+                    rut_acomp_norm = clean_rut(acomp_doc_num_clean)
+                    if rut_excede_largo(rut_acomp_norm):
+                        flash('El RUT del acompañante es demasiado largo.', 'danger')
+                        return redirect(url_for('casos.gestionar_caso', id=caso.id))
+                    if not es_rut_valido(rut_acomp_norm):
+                        flash('El RUT del acompañante no es válido.', 'danger')
+                        return redirect(url_for('casos.gestionar_caso', id=caso.id))
+                    caso.acompanante_doc_numero = rut_acomp_norm
+                else:
+                    caso.acompanante_doc_numero = acomp_doc_num_clean
+
+            if acomp_doc_tipo == 'OTRO':
+                acomp_otro_desc = clean(request.form.get('acomp_doc_otro_desc'))
+                if acomp_otro_desc:
+                    caso.acompanante_doc_otro_descripcion = acomp_otro_desc
+
+            a_calle_new = clean(request.form.get('acomp_calle'))
+            a_num_new = clean(request.form.get('acomp_numero'))
+            if a_calle_new is not None:
+                caso.acompanante_direccion_calle = a_calle_new
+            if a_num_new is not None:
+                caso.acompanante_direccion_numero = a_num_new
+
+            a_calle = caso.acompanante_direccion_calle
+            a_num = caso.acompanante_direccion_numero
+            caso.acompanante_domicilio = f"{a_calle} #{a_num}".strip(" #") if (a_calle or a_num) else None
 
             # B) Datos Clínicos (CORRECCIÓN SAFE INT + OTRO)
             recinto_inscrito_id_raw = request.form.get('recinto_inscrito_id')
@@ -320,7 +476,7 @@ def gestionar_caso(id):
             print(f"Error gestionando caso: {e}")
             flash('Ocurrió un error al guardar la gestión.', 'danger')
 
-    return render_template('casos/gestion.html', caso=caso, establecimientos=establecimientos)
+    return render_template('casos/gestion.html', caso=caso, establecimientos=establecimientos, instituciones=instituciones)
 
 # --- RUTA CIERRE DE CASO (FINAL) ---
 @casos_bp.route('/cerrar/<int:id>', methods=['POST'])

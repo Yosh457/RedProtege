@@ -13,6 +13,45 @@ def safe_int(value):
         return int(value)
     except (ValueError, TypeError):
         return None
+    
+def clean(value):
+    """Convierte espacios vacios a None para guardar NULL en BD."""
+    if value is None:
+        return None
+    v = str(value).strip()
+    return v if v else None
+
+def clean_rut(value):
+    """
+    Normaliza RUT para persistencia: sin puntos y con guion.
+    Retorna None si viene vacío.
+    Ej: 12.345.678-9 -> 12345678-9
+    """
+    v = clean(value)
+    if not v:
+        return None
+    v = v.replace(".", "").replace(" ", "").upper()
+    # Si viene con guion, ok; si no, lo agregamos al final
+    if "-" in v:
+        cuerpo, dv = v.split("-", 1)
+        cuerpo = "".join(ch for ch in cuerpo if ch.isdigit())
+        dv = (dv[:1] or "").upper()
+        return f"{cuerpo}-{dv}" if cuerpo and dv else None
+    else:
+        # último char es dv
+        cuerpo = "".join(ch for ch in v[:-1] if ch.isdigit())
+        dv = v[-1].upper()
+        return f"{cuerpo}-{dv}" if cuerpo and dv else None
+    
+def rut_excede_largo(rut_normalizado):
+    """
+    Evita Data too long.
+    Persistimos como 12345678-9 => largo máx 10 (8 + 1 + 1).
+    Para 7 dígitos => 9.
+    """
+    if not rut_normalizado:
+        return False
+    return len(rut_normalizado) > 10
 
 @solicitudes_bp.route('/ingreso', methods=['GET', 'POST'])
 @login_required
@@ -60,16 +99,32 @@ def formulario():
             if not vulneraciones_ids_int:
                 errores.append("Debe seleccionar al menos un Tipo de Vulneración.")
 
-            # CORRECCIÓN: Validación de Relato Obligatorio
-            relato = (f.get('relato_caso') or '').strip()
+            # Relato obligatorio (usa clean => strip + None)
+            relato = clean(f.get('relato_caso'))
             if not relato:
                 errores.append("El relato del caso es obligatorio.")
 
-            # Validar RUT solo si el tipo es RUT
-            if f.get('paciente_doc_tipo') == 'RUT':
-                rut = f.get('paciente_doc_numero')
-                if not rut or not es_rut_valido(rut):
+            # --- RUT PACIENTE: validar SOLO si tipo=RUT y viene valor ---
+            paciente_doc_tipo = f.get('paciente_doc_tipo')
+            paciente_doc_num_raw = f.get('paciente_doc_numero')
+            paciente_doc_num = clean_rut(paciente_doc_num_raw) if paciente_doc_tipo == 'RUT' else clean(paciente_doc_num_raw)
+
+            if paciente_doc_tipo == 'RUT' and paciente_doc_num:
+                if rut_excede_largo(paciente_doc_num):
+                    errores.append("El RUT del paciente excede el largo permitido.")
+                elif not es_rut_valido(paciente_doc_num):
                     errores.append("El RUT del paciente ingresado no es válido.")
+
+            # --- RUT ACOMPAÑANTE: validar SOLO si tipo=RUT y viene valor ---
+            acomp_doc_tipo = f.get('acomp_doc_tipo')
+            acomp_doc_num_raw = f.get('acomp_doc_numero')
+            acomp_doc_num = clean_rut(acomp_doc_num_raw) if acomp_doc_tipo == 'RUT' else clean(acomp_doc_num_raw)
+
+            if acomp_doc_tipo == 'RUT' and acomp_doc_num:
+                if rut_excede_largo(acomp_doc_num):
+                    errores.append("El RUT del acompañante excede el largo permitido.")
+                elif not es_rut_valido(acomp_doc_num):
+                    errores.append("El RUT del acompañante ingresado no es válido.")
 
             # Si hay errores, devolver formulario con datos previos
             if errores:
@@ -94,7 +149,7 @@ def formulario():
                     if 'otro' in v_obj.nombre.lower():
                         flag_vuln_otro = True
             
-            vulneracion_texto = f.get('vulneracion_otro_txt') if flag_vuln_otro else None
+            vulneracion_texto = clean(f.get('vulneracion_otro_txt')) if flag_vuln_otro else None
 
             # 5. Lógica Denuncia Institución (si hubo denuncia)
             # Si NO hubo denuncia, forzamos todos los campos relacionados a None (NULL en DB)
@@ -112,10 +167,10 @@ def formulario():
                 if denuncia_inst_id:
                     inst_obj = CatalogoInstitucion.query.get(denuncia_inst_id)
                     if inst_obj and 'otro' in inst_obj.nombre.lower():
-                        denuncia_inst_otro = f.get('institucion_otro')
+                        denuncia_inst_otro = clean(f.get('institucion_otro'))
                 
-                denuncia_prof_nombre = f.get('denuncia_nombre') or None
-                denuncia_prof_cargo = f.get('denuncia_cargo') or None
+                denuncia_prof_nombre = clean(f.get('denuncia_nombre'))
+                denuncia_prof_cargo = clean(f.get('denuncia_cargo'))
 
             # 6. Preparar Fechas
             fecha_atencion_dt = datetime.strptime(f.get('fecha_atencion'), '%Y-%m-%d').date()
@@ -125,15 +180,15 @@ def formulario():
             if f.get('paciente_fecha_nac'):
                 fecha_nac_dt = datetime.strptime(f.get('paciente_fecha_nac'), '%Y-%m-%d').date()
 
-            # 7. Construcción de Direcciones (Legacy + Nuevas)
+            # 7. Construcción de Direcciones (mismo flujp. érp cñean => NULL)
             # Paciente
-            p_calle = (f.get('paciente_calle') or '').strip()
-            p_num = (f.get('paciente_numero') or '').strip()
+            p_calle = clean(f.get('paciente_calle'))
+            p_num = clean(f.get('paciente_numero'))
             p_dom = f"{p_calle} #{p_num}".strip(" #") if (p_calle or p_num) else None
 
             # Acompañante
-            a_calle = (f.get('acomp_calle') or '').strip()
-            a_num = (f.get('acomp_numero') or '').strip()
+            a_calle = clean(f.get('acomp_calle'))
+            a_num = clean(f.get('acomp_numero'))
             a_dom = f"{a_calle} #{a_num}".strip(" #") if (a_calle or a_num) else None
 
             # 8. Creación del Objeto Caso
@@ -143,23 +198,23 @@ def formulario():
                 hora_atencion=hora_atencion_dt,
                 recinto_notifica_id=recinto_id_int,
                 recinto_otro_texto=recinto_texto,
-                folio_atencion=f.get('folio_atencion'),
-                ingresado_por_nombre=f.get('funcionario_nombre'),
-                ingresado_por_cargo=f.get('funcionario_cargo'),
+                folio_atencion=clean(f.get('folio_atencion')),
+                ingresado_por_nombre=clean(f.get('funcionario_nombre')),
+                ingresado_por_cargo=clean(f.get('funcionario_cargo')),
                 ciclo_vital_id=ciclo_id_int,
                 
                 # Paciente (Permite Nulos)
-                origen_nombres=f.get('paciente_nombres') or None,
-                origen_apellidos=f.get('paciente_apellidos') or None,
+                origen_nombres=clean(f.get('paciente_nombres')),
+                origen_apellidos=clean(f.get('paciente_apellidos')),
                 origen_rut=f.get('paciente_doc_numero') if f.get('paciente_doc_tipo') == 'RUT' else None, # Llenamos legacy
                 origen_fecha_nacimiento=fecha_nac_dt, # Llenamos legacy
 
                 # Asignación de Relato Obligatorio
                 origen_relato=relato,
                 
-                paciente_doc_tipo=f.get('paciente_doc_tipo'),
-                paciente_doc_numero=f.get('paciente_doc_numero'),
-                paciente_doc_otro_descripcion=f.get('paciente_doc_otro_desc') if f.get('paciente_doc_tipo') == 'OTRO' else None,
+                paciente_doc_tipo=paciente_doc_tipo,
+                paciente_doc_numero=paciente_doc_num, # normalizado si es RUT, clean si no
+                paciente_doc_otro_descripcion=clean(f.get('paciente_doc_otro_desc')) if f.get('paciente_doc_tipo') == 'OTRO' else None,
                 paciente_fecha_nacimiento=fecha_nac_dt,
                 
                 # Direcciones
@@ -167,14 +222,14 @@ def formulario():
                 paciente_direccion_numero=p_num,
                 paciente_domicilio=p_dom,
 
-                # Acompañante
-                acompanante_nombre=f.get('acomp_nombre'),
-                acompanante_parentesco=f.get('acomp_parentesco'),
-                acompanante_telefono=f.get('acomp_telefono'),
-                acompanante_telefono_tipo=f.get('acomp_tel_tipo'),
-                acompanante_doc_tipo=f.get('acomp_doc_tipo'),
-                acompanante_doc_numero=f.get('acomp_doc_numero'),
-                acompanante_doc_otro_descripcion=f.get('acomp_doc_otro_desc') if f.get('acomp_doc_tipo') == 'OTRO' else None,
+                # Acompañante (clean para evitar "" => NULL)
+                acompanante_nombre=clean(f.get('acomp_nombre')),
+                acompanante_parentesco=clean(f.get('acomp_parentesco')),
+                acompanante_telefono=clean(f.get('acomp_telefono')),
+                acompanante_telefono_tipo=clean(f.get('acomp_tel_tipo')),
+                acompanante_doc_tipo=acomp_doc_tipo,
+                acompanante_doc_numero=acomp_doc_num,
+                acompanante_doc_otro_descripcion=clean(f.get('acomp_doc_otro_desc')) if acomp_doc_tipo == 'OTRO' else None,
                 
                 acompanante_direccion_calle=a_calle,
                 acompanante_direccion_numero=a_num,

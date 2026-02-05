@@ -1,6 +1,10 @@
+# app.py
 import os
 from dotenv import load_dotenv
-from flask import Flask, redirect, url_for
+from flask import Flask, redirect, url_for, flash
+from flask_wtf.csrf import CSRFError
+
+# Importamos extensiones y modelos
 from extensions import login_manager, csrf
 from models import db, Usuario
 
@@ -34,12 +38,12 @@ def create_app():
     login_manager.init_app(app)
     csrf.init_app(app)
 
+    # Configuración de Login
     login_manager.login_view = 'auth.login'
     login_manager.login_message = 'Acceso restringido al sistema RedProtege.'
     login_manager.login_message_category = 'warning'
 
     # --- REGISTRO DE BLUEPRINTS ---
-    
     from blueprints.auth import auth_bp
     app.register_blueprint(auth_bp)
 
@@ -58,9 +62,24 @@ def create_app():
     def index():
         # Redirigir al login por ahora
         return redirect(url_for('auth.login')) 
+    
+    # --- ERRORES Y CACHÉ ---
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(e):
+        flash('La sesión expiró. Intenta enviar el formulario de nuevo.', 'warning')
+        return redirect(url_for('auth.login'))
+    
+    @app.after_request
+    def add_header(response):
+        """Desactiva el caché para evitar problemas al volver atrás en el navegador"""
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '-1'
+        return response
 
     return app
 
+# Loader de usuario para Flask-Login
 @login_manager.user_loader
 def load_user(user_id):
     return Usuario.query.get(int(user_id))

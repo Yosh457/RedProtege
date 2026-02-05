@@ -112,7 +112,7 @@
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Nº Documento *</label>
-                        <input type="text" name="paciente_doc_numero" id="paciente_doc_numero" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required>
+                        <input type="text" name="paciente_doc_numero" id="paciente_doc_numero" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
                         <p class="text-xs text-red-500 mt-1 hidden" id="error_rut_paciente">RUT Inválido</p>
                     </div>
                     <div id="div_paciente_otro_doc" class="hidden">
@@ -124,11 +124,11 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Nombres *</label>
-                        <input type="text" name="paciente_nombres" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required>
+                        <input type="text" name="paciente_nombres" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Apellidos *</label>
-                        <input type="text" name="paciente_apellidos" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required>
+                        <input type="text" name="paciente_apellidos" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
                     </div>
                 </div>
 
@@ -183,8 +183,7 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Teléfono *</label>
                         <div class="flex">
-                            <span class="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm">+56</span>
-                            <input type="text" name="acomp_telefono" placeholder="912345678" class="block w-full flex-1 rounded-r-md border-gray-300 focus:border-blue-500 focus:ring-blue-500 sm:text-sm" required>
+                            <input type="text" name="acomp_telefono" placeholder="912345678" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required>
                         </div>
                     </div>
                     <div>
@@ -330,17 +329,29 @@
     function validarRutEnTiempoReal(e) {
         const input = e.target;
         const errorMsg = document.getElementById('error_rut_paciente');
-        let valor = input.value.replace(/\./g, '').replace(/-/g, '');
+        let valor = input.value.replace(/\./g, '').replace(/-/g, '').trim();
         
-        if (valor.length < 8) return; 
-        
-        // Validación visual simple (longitud)
+        // si está vacío, no mostrar error
+        if (!valor) {
+            input.classList.remove('border-red-500');
+            errorMsg.classList.add('hidden');
+            return;
+        }
+
+        // si aún está incompleto, no molestamos
+        if (valor.length < 8) {
+            input.classList.remove('border-red-500');
+            errorMsg.classList.add('hidden');
+            return;
+        }
+
+        // si es demasiado largo, marcar
         if (valor.length > 9) {
-             input.classList.add('border-red-500');
-             errorMsg.classList.remove('hidden');
+            input.classList.add('border-red-500');
+            errorMsg.classList.remove('hidden');
         } else {
-             input.classList.remove('border-red-500');
-             errorMsg.classList.add('hidden');
+            input.classList.remove('border-red-500');
+            errorMsg.classList.add('hidden');
         }
     }
 
@@ -373,6 +384,64 @@
             div.classList.remove('hidden');
         } else {
             div.classList.add('hidden');
+        }
+    }
+
+    // --- AUTO-FECHA/HORA + AUTO-CICLO (agregado) ---
+    document.addEventListener('DOMContentLoaded', function () {
+        // 1) Auto fecha/hora (solo si están vacíos)
+        const ahora = new Date();
+
+        const fechaInput = document.querySelector('input[name="fecha_atencion"]');
+        const horaInput = document.querySelector('input[name="hora_atencion"]');
+
+        if (fechaInput && !fechaInput.value) {
+            const yyyy = ahora.getFullYear();
+            const mm = String(ahora.getMonth() + 1).padStart(2, '0');
+            const dd = String(ahora.getDate()).padStart(2, '0');
+            fechaInput.value = `${yyyy}-${mm}-${dd}`;
+        }
+
+        if (horaInput && !horaInput.value) {
+            const hh = String(ahora.getHours()).padStart(2, '0');
+            const min = String(ahora.getMinutes()).padStart(2, '0');
+            horaInput.value = `${hh}:${min}`;
+        }
+
+        // 2) Al cambiar fecha nac: recalcular edad (tu función) + set ciclo vital
+        const fn = document.getElementById('paciente_fecha_nac');
+        if (fn) {
+            fn.addEventListener('change', function () {
+                if (typeof calcularEdad === 'function') calcularEdad();
+                calcularCicloVital();
+            });
+        }
+    });
+
+    function calcularCicloVital() {
+        const input = document.getElementById('paciente_fecha_nac');
+        const selectCiclo = document.querySelector('select[name="ciclo_id"]');
+        if (!input || !selectCiclo || !input.value) return;
+
+        const nacimiento = new Date(input.value);
+        const hoy = new Date();
+
+        let edad = hoy.getFullYear() - nacimiento.getFullYear();
+        const m = hoy.getMonth() - nacimiento.getMonth();
+        if (m < 0 || (m === 0 && hoy.getDate() < nacimiento.getDate())) edad--;
+        if (edad < 0) edad = 0;
+
+        let textoBuscar = "";
+        if (edad >= 0 && edad <= 9) textoBuscar = "Infantil";
+        else if (edad >= 10 && edad <= 19) textoBuscar = "Adolescente";
+        else if (edad >= 20 && edad <= 64) textoBuscar = "Adulto";
+        else if (edad >= 65) textoBuscar = "Mayor";
+
+        for (let i = 0; i < selectCiclo.options.length; i++) {
+            if ((selectCiclo.options[i].text || "").includes(textoBuscar)) {
+                selectCiclo.selectedIndex = i;
+                break;
+            }
         }
     }
 </script>
