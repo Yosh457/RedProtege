@@ -1,4 +1,5 @@
 import os
+import io
 from datetime import datetime, timedelta, date
 from flask import Blueprint, render_template, abort, request, flash, redirect, url_for, send_file
 from flask_login import login_required, current_user
@@ -6,6 +7,9 @@ from sqlalchemy import case, or_, func
 from models import db, Caso, Usuario, Rol, AuditoriaCaso, CatalogoEstablecimiento, CatalogoInstitucion, CatalogoRecinto, obtener_hora_chile
 from utils import check_password_change, registrar_log, enviar_aviso_asignacion, generar_acta_cierre_pdf, enviar_aviso_cierre, es_rut_valido
 from datetime import datetime
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 casos_bp = Blueprint('casos', __name__, template_folder='../templates', url_prefix='/casos')
 
@@ -811,3 +815,168 @@ def descargar_acta(id):
         print(f"Error sirviendo archivo: {e}")
         flash('Error interno al intentar descargar el archivo.', 'danger')
         return redirect(url_for('casos.ver_caso', id=caso.id))
+    
+# --- NUEVA RUTA: EXPORTAR EXCEL ---
+@casos_bp.route('/exportar')
+@login_required
+def exportar_excel():
+    """
+    Genera y descarga un reporte Excel (.xlsx) de los casos filtrados.
+    Reutiliza la MISMA lógica de seguridad y filtros que el index.
+    """
+    # 1. Recuperar filtros de la URL (igual que en index)
+    search_query = request.args.get('search', '').strip()
+    estado_filter = request.args.get('estado', '').strip()
+
+    rol_nombre = current_user.rol.nombre
+    
+    # 2. Construir Filtros de Seguridad (Base Query)
+    filters = []
+
+    if rol_nombre == 'Admin':
+        pass
+    elif rol_nombre in ['Referente', 'Visualizador']:
+        if current_user.ciclo_asignado_id:
+            filters.append(Caso.ciclo_vital_id == current_user.ciclo_asignado_id)
+    elif rol_nombre == 'Funcionario':
+        filters.append(Caso.asignado_a_usuario_id == current_user.id)
+    else:
+        abort(403)
+
+    # Iniciar query segura
+    query = Caso.query.filter(*filters)
+
+    # 3. Aplicar Filtros de Usuario (Búsqueda y Estado)
+    if search_query:
+        search_clean = search_query.replace('.', '')
+        search_pattern = f"%{search_clean}%"
+        query = query.filter(or_(
+            Caso.folio_atencion.ilike(search_pattern),
+            Caso.origen_nombres.ilike(search_pattern),
+            Caso.origen_apellidos.ilike(search_pattern),
+            Caso.paciente_doc_numero.ilike(search_pattern),
+            Caso.origen_rut.ilike(search_pattern),
+            Caso.acompanante_nombre.ilike(search_pattern)
+        ))
+
+    if estado_filter:
+        query = query.filter(Caso.estado == estado_filter)
+
+    # 4. Obtener TODOS los resultados (Sin paginación)
+    # Ordenamos igual que la vista: Prioridad Estado -> Fecha
+    orden_estado = case(
+        (Caso.estado == 'PENDIENTE_RESCATAR', 0),
+        (Caso.estado == 'EN_SEGUIMIENTO', 1),
+        (Caso.estado == 'CERRADO', 2),
+        else_=3
+    )
+    casos = query.order_by(orden_estado, Caso.fecha_ingreso.desc()).all()
+
+    # 5. Generar Excel con openpyxl
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Reporte de Casos"
+
+    # Definir Encabezados
+    headers = [
+        "Fecha Ingreso", 
+        "Folio", 
+        "Estado", 
+        "Tipo Doc", 
+        "Num Documento", 
+        "Paciente", 
+        "Edad (Ref)",
+        "Ciclo Vital", 
+        "Recinto Notifica", 
+        "Recinto Inscrito",
+        "Asignado A",
+        "Fecha Cierre"
+    ]
+
+    # Estilo para Encabezados (Negrita, Fondo Azul Oscuro, Letra Blanca)
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="1F2937", end_color="1F2937", fill_type="solid") # Gris oscuro tipo Tailwind gray-800
+    alignment_center = Alignment(horizontal="center", vertical="center")
+
+    # Escribir Encabezados
+    ws.append(headers)
+    for col_num, cell in enumerate(ws[1], 1):
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = alignment_center
+
+    # Escribir Datos
+    for caso in casos:
+        # Pre-procesamiento de datos para evitar errores con None
+        fecha_ingreso = caso.fecha_ingreso.strftime('%d-%m-%Y %H:%M') if caso.fecha_ingreso else ""
+        fecha_cierre = caso.fecha_cierre.strftime('%d-%m-%Y %H:%M') if caso.fecha_cierre else ""
+        
+        # Nombre completo paciente
+        nombres = caso.origen_nombres or ""
+        apellidos = caso.origen_apellidos or ""
+        paciente_full = f"{nombres} {apellidos}".strip()
+
+        # Documento
+        doc_tipo = caso.paciente_doc_tipo or "RUT"
+        doc_num = caso.paciente_doc_numero or caso.origen_rut or "S/I"
+
+        # Asignado
+        asignado = caso.asignado_a.nombre_completo if caso.asignado_a else "Sin Asignar"
+
+        # Recintos
+        recinto_notifica = caso.recinto_notifica.nombre if caso.recinto_notifica else "Desconocido"
+        recinto_inscrito = caso.recinto_inscrito.nombre if caso.recinto_inscrito else "No Registrado"
+        if caso.recinto_inscrito_otro_texto:
+            recinto_inscrito += f" ({caso.recinto_inscrito_otro_texto})"
+
+        # Edad referencial (calculo simple si hay fecha nac)
+        edad_str = ""
+        if caso.paciente_fecha_nacimiento:
+            hoy = obtener_hora_chile().date()
+            nac = caso.paciente_fecha_nacimiento
+            edad = hoy.year - nac.year - ((hoy.month, hoy.day) < (nac.month, nac.day))
+            edad_str = f"{edad} años"
+
+        row = [
+            fecha_ingreso,
+            caso.folio_atencion,
+            caso.estado,
+            doc_tipo,
+            doc_num,
+            paciente_full,
+            edad_str,
+            caso.ciclo_vital.nombre,
+            recinto_notifica,
+            recinto_inscrito,
+            asignado,
+            fecha_cierre
+        ]
+        ws.append(row)
+
+    # 6. Formato Final (AutoFilter, Congelar Panel, Anchos)
+    
+    # Agregar AutoFilter
+    ws.auto_filter.ref = ws.dimensions
+
+    # Congelar primera fila
+    ws.freeze_panes = "A2"
+
+    # Ajustar ancho de columnas (Estimación decente)
+    column_widths = [18, 10, 15, 10, 15, 30, 10, 15, 30, 30, 20, 18]
+    for i, width in enumerate(column_widths, 1):
+        col_letter = get_column_letter(i)
+        ws.column_dimensions[col_letter].width = width
+
+    # 7. Guardar en memoria y enviar
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    filename = f"Reporte_Casos_{obtener_hora_chile().strftime('%Y%m%d_%H%M')}.xlsx"
+
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=filename
+    )
