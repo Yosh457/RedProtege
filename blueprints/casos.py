@@ -1,8 +1,9 @@
 import os
+from datetime import datetime, timedelta, date
 from flask import Blueprint, render_template, abort, request, flash, redirect, url_for, send_file
 from flask_login import login_required, current_user
-from sqlalchemy import case, or_
-from models import db, Caso, Usuario, Rol, AuditoriaCaso, CatalogoEstablecimiento, CatalogoInstitucion, obtener_hora_chile
+from sqlalchemy import case, or_, func
+from models import db, Caso, Usuario, Rol, AuditoriaCaso, CatalogoEstablecimiento, CatalogoInstitucion, CatalogoRecinto, obtener_hora_chile
 from utils import check_password_change, registrar_log, enviar_aviso_asignacion, generar_acta_cierre_pdf, enviar_aviso_cierre, es_rut_valido
 from datetime import datetime
 
@@ -52,54 +53,199 @@ def before_request():
 @casos_bp.route('/')
 def index():
     """
-    Bandeja de Entrada de Casos.
-    Aplica filtros de seguridad, búsqueda y ordenamiento.
+    Bandeja de Entrada + Dashboard Ejecutivo (Fase 3 Refinada).
     """
     page = request.args.get('page', 1, type=int)
-    search_query = request.args.get('search', '').strip() # Capturamos el texto del buscador
-    estado_filter = request.args.get('estado', '').strip() # Capturamos filtro por estado
-    
-    query = Caso.query
-    
+    search_query = request.args.get('search', '').strip()
+    estado_filter = request.args.get('estado', '').strip()
+
     rol_nombre = current_user.rol.nombre
     titulo_vista = "Vista Global"
 
-    # --- 1. REGLAS DE VISIBILIDAD (SEGURIDAD) ---
+    # =========================================================
+    # A. FILTROS DE SEGURIDAD (ROLES)
+    # =========================================================
+    filters = []
+
     if rol_nombre == 'Admin':
         pass
     elif rol_nombre in ['Referente', 'Visualizador']:
         if current_user.ciclo_asignado_id:
-            query = query.filter(Caso.ciclo_vital_id == current_user.ciclo_asignado_id)
+            filters.append(Caso.ciclo_vital_id == current_user.ciclo_asignado_id)
             titulo_vista = f"Ciclo {current_user.ciclo_asignado.nombre}"
         else:
             titulo_vista = "Vista Global (Todos los Ciclos)"
     elif rol_nombre == 'Funcionario':
-        query = query.filter(Caso.asignado_a_usuario_id == current_user.id)
+        filters.append(Caso.asignado_a_usuario_id == current_user.id)
         titulo_vista = "Mis Casos Asignados"
     else:
         abort(403)
 
-    # --- 2. MOTOR DE BÚSQUEDA (NUEVO) ---
+    # Query Base (Solo Seguridad)
+    base_query = Caso.query.filter(*filters)
+
+    # =========================================================
+    # B. DASHBOARD DATA (KPIs + GRÁFICOS)
+    # Ignoran filtros de búsqueda/estado, muestran la "realidad total" del usuario
+    # =========================================================
+    
+    # 1. KPIs Generales
+    stats_query = db.session.query(
+        func.count(Caso.id).label('total'),
+        func.sum(case((Caso.estado == 'PENDIENTE_RESCATAR', 1), else_=0)).label('pendientes'),
+        func.sum(case((Caso.estado == 'EN_SEGUIMIENTO', 1), else_=0)).label('seguimiento'),
+        func.sum(case((Caso.estado == 'CERRADO', 1), else_=0)).label('cerrados')
+    ).filter(*filters)
+    
+    stats_result = stats_query.first()
+    
+    total = stats_result.total or 0
+    pendientes = int(stats_result.pendientes or 0)
+    seguimiento = int(stats_result.seguimiento or 0)
+    cerrados = int(stats_result.cerrados or 0)
+
+    # Calculamos porcentajes para la vista (evitar división por cero)
+    pct_pendientes = round((pendientes / total * 100), 1) if total > 0 else 0
+    pct_seguimiento = round((seguimiento / total * 100), 1) if total > 0 else 0
+    pct_cerrados = round((cerrados / total * 100), 1) if total > 0 else 0
+
+    # 2. Datos Semanales (Gráfico de Barras)
+    # Obtenemos los últimos 7 días
+    hoy = obtener_hora_chile().date()
+    fecha_inicio = hoy - timedelta(days=6) # 7 días contando hoy
+    
+    # Query agrupada por fecha (versión compatible universalmente: traemos datos y procesamos en python)
+    # Filtramos por fecha >= inicio Y filtros de seguridad
+    weekly_raw = db.session.query(Caso.fecha_ingreso).filter(
+        Caso.fecha_ingreso >= fecha_inicio,
+        *filters
+    ).all()
+
+    # Procesamiento en Python para llenar días vacíos con 0
+    weekly_map = {}
+    # Inicializar diccionario con los últimos 7 días en 0
+    for i in range(7):
+        d = fecha_inicio + timedelta(days=i)
+        # Guardamos como string 'YYYY-MM-DD' para comparar
+        weekly_map[d.strftime('%Y-%m-%d')] = 0
+
+    # Llenar con datos reales
+    for row in weekly_raw:
+        # Ajuste simple: si la fecha coincide (ignorando hora), sumamos
+        # Nota: fecha_ingreso en DB es DateTime. 
+        if row.fecha_ingreso:
+            d_key = row.fecha_ingreso.date().strftime('%Y-%m-%d')
+            if d_key in weekly_map:
+                weekly_map[d_key] += 1
+
+    # Preparar listas ordenadas para Chart.js
+    nombres_dias = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+    bar_labels = []
+    bar_data = []
+
+    for i in range(7):
+        d = fecha_inicio + timedelta(days=i)
+        d_str = d.strftime('%Y-%m-%d')
+        weekday_name = nombres_dias[d.weekday()] # 0=Lun, 6=Dom
+        
+        bar_labels.append(weekday_name) # Ej: "Lun"
+        bar_data.append(weekly_map[d_str])
+
+    # 3. Recintos de Notificación (Doughnut) - Agrupar por nombre de recinto
+    notif_query = db.session.query(
+        CatalogoRecinto.nombre,
+        func.count(Caso.id).label('count')
+    ).join(Caso.recinto_notifica)\
+     .filter(*filters)\
+     .group_by(CatalogoRecinto.nombre)\
+     .order_by(func.count(Caso.id).desc()).all()
+
+    notif_labels = []
+    notif_values = []
+    notif_total = 0
+    notif_data_full = [] # Para la leyenda HTML
+
+    # Calcular total para porcentajes
+    temp_total_notif = sum(row.count for row in notif_query)
+
+    # Definir colores fijos para la leyenda (ciclo de 4 colores)
+    colors = ['#3B82F6', '#FBBF24', '#22C55E', '#A855F7', '#EC4899', '#6B7280'] # Azul, Amarillo, Verde, Morado, Rosa, Gris
+
+    for idx, row in enumerate(notif_query):
+        pct = round((row.count / temp_total_notif * 100), 1) if temp_total_notif > 0 else 0
+        notif_labels.append(row.nombre)
+        notif_values.append(row.count)
+        
+        # Guardamos estructura completa para renderizar leyenda en HTML con Jinja
+        notif_data_full.append({
+            'nombre': row.nombre,
+            'count': row.count,
+            'pct': pct,
+            'color': colors[idx % len(colors)] # Asignar color cíclico
+        })
+    
+    notif_total = temp_total_notif
+
+    # 4. Recintos Inscritos (Barras Horizontales - Top 5)
+    inscritos_query = db.session.query(
+        CatalogoEstablecimiento.nombre,
+        func.count(Caso.id).label('count')
+    ).join(Caso.recinto_inscrito)\
+     .filter(*filters)\
+     .group_by(CatalogoEstablecimiento.nombre)\
+     .order_by(func.count(Caso.id).desc())\
+     .limit(5).all()
+
+    inscritos_labels = [row.nombre for row in inscritos_query]
+    inscritos_values = [row.count for row in inscritos_query]
+
+    # Empaquetamos todo
+    dashboard_data = {
+        'total': total,
+        'pendientes': pendientes,
+        'seguimiento': seguimiento,
+        'cerrados': cerrados,
+        'pct_pendientes': pct_pendientes,
+        'pct_seguimiento': pct_seguimiento,
+        'pct_cerrados': pct_cerrados,
+
+        'bar_labels': bar_labels,
+        'bar_data': bar_data,
+
+        # Datos Recintos Notificación
+        'notif_labels': notif_labels,
+        'notif_values': notif_values,
+        'notif_total': notif_total,
+        'notif_data_full': notif_data_full, # Lista rica para leyenda HTML
+        
+        # Datos Recintos Inscritos
+        'inscritos_labels': inscritos_labels,
+        'inscritos_values': inscritos_values
+    }
+
+    # =========================================================
+    # C. TABLA (CON BÚSQUEDA Y FILTROS)
+    # =========================================================
+    tabla_query = base_query # Hereda filtros de seguridad
+
+    # Filtro Texto
     if search_query:
-        # Normalizamos un poco para el RUT (quitamos puntos si el usuario los puso)
         search_clean = search_query.replace('.', '')
         search_pattern = f"%{search_clean}%"
-
-        # Busca coincidencias en cualquiera de estos campos
-        query = query.filter(or_(
-            Caso.folio_atencion.ilike(search_pattern),           # Folio
-            Caso.origen_nombres.ilike(search_pattern),           # Nombres (origen)
-            Caso.origen_apellidos.ilike(search_pattern),         # Apellidos (origen)
-            Caso.paciente_doc_numero.ilike(search_pattern),      # RUT/Doc (nuevo)
-            Caso.origen_rut.ilike(search_pattern),               # RUT (legacy)
-            Caso.acompanante_nombre.ilike(search_pattern)        # Nombre Acompañante
+        tabla_query = tabla_query.filter(or_(
+            Caso.folio_atencion.ilike(search_pattern),
+            Caso.origen_nombres.ilike(search_pattern),
+            Caso.origen_apellidos.ilike(search_pattern),
+            Caso.paciente_doc_numero.ilike(search_pattern),
+            Caso.origen_rut.ilike(search_pattern),
+            Caso.acompanante_nombre.ilike(search_pattern)
         ))
 
-    # --- 3. FILTRO POR ESTADO (NUEVO) ---
+    # Filtro Estado
     if estado_filter:
-        query = query.filter(Caso.estado == estado_filter)
+        tabla_query = tabla_query.filter(Caso.estado == estado_filter)
 
-    # --- 4. ORDENAMIENTO POR PRIORIDAD ---
+    # Ordenamiento
     orden_estado = case(
         (Caso.estado == 'PENDIENTE_RESCATAR', 0),
         (Caso.estado == 'EN_SEGUIMIENTO', 1),
@@ -107,14 +253,17 @@ def index():
         else_=3
     )
 
-    # --- 5. PAGINACIÓN ---
-    # Mantenemos el filtro en la paginación para que no se pierda al cambiar de página
-    pagination = query.order_by(
+    pagination = tabla_query.order_by(
         orden_estado, 
         Caso.fecha_ingreso.desc()
     ).paginate(page=page, per_page=15, error_out=False)
 
-    return render_template('casos/index.html', pagination=pagination, nombre_filtro=titulo_vista)
+    return render_template(
+        'casos/index.html',
+        pagination=pagination,
+        nombre_filtro=titulo_vista,
+        stats=dashboard_data
+    )
 
 @casos_bp.route('/ver/<int:id>', methods=['GET', 'POST'])
 def ver_caso(id):
