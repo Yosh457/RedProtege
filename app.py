@@ -1,7 +1,7 @@
 # app.py
 import os
 from dotenv import load_dotenv
-from flask import Flask, redirect, url_for, flash
+from flask import Flask, redirect, url_for, flash, render_template
 from flask_wtf.csrf import CSRFError
 
 # Importamos extensiones y modelos
@@ -76,6 +76,20 @@ def create_app():
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '-1'
         return response
+    
+    # MANEJO DE ERRORES PERSONALIZADO
+    @app.errorhandler(404)
+    def page_not_found(e):
+        return render_template('errors/404.html'), 404
+
+    @app.errorhandler(403)
+    def access_denied(e):
+        return render_template('errors/403.html'), 403
+
+    @app.errorhandler(500)
+    def internal_server_error(e):
+        # Aquí podrías agregar un log crítico si quisieras
+        return render_template('errors/500.html'), 500
 
     return app
 
