@@ -372,12 +372,28 @@
                   <p><span class="font-bold">COSAM:</span> {{ labels.get(caso.gestion_cosam, caso.gestion_cosam) }}</p>
                 {% endif %}
 
-                {% if caso.observaciones_gestion %}
-                  <div class="mt-2 p-3 bg-gray-50 rounded border border-gray-200">
-                    <span class="block text-xs font-bold text-gray-500 mb-1">Observaciones y derivaciones:</span>
-                    {{ caso.observaciones_gestion }}
-                  </div>
-                {% endif %}
+                <div class="mt-6">
+                <h4 class="font-bold text-gray-800 mb-3">Historial de Observaciones y Derivaciones</h4>
+                <div class="bg-gray-50 rounded-lg p-4 border border-gray-200 max-h-60 overflow-y-auto">
+                    {% if caso.gestiones %}
+                        <div class="space-y-4">
+                            {% for gestion in caso.gestiones %}
+                            <div class="bg-white p-3 rounded shadow-sm border border-gray-100">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="text-xs font-bold text-blue-600">{{ gestion.usuario.nombre_completo }}</span>
+                                    <span class="text-xs text-gray-400">{{ gestion.fecha_movimiento.strftime('%d/%m %H:%M') }}</span>
+                                </div>
+                                <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ gestion.observacion }}</p>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% elif caso.observaciones_gestion %}
+                        <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ caso.observaciones_gestion }}</p>
+                    {% else %}
+                        <p class="text-sm text-gray-400 italic">Sin observaciones registradas.</p>
+                    {% endif %}
+                </div>
+            </div>
               </div>
             </div>
             {% endif %}

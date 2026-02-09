@@ -99,6 +99,19 @@ class Log(db.Model):
 
 # --- NEGOCIO: CASOS ---
 
+class CasoGestion(db.Model):
+    __tablename__ = 'caso_gestiones'
+    id = db.Column(db.Integer, primary_key=True)
+    caso_id = db.Column(db.Integer, db.ForeignKey('casos.id'), nullable=False, index=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False, index=True)
+    fecha_movimiento = db.Column(db.DateTime, default=obtener_hora_chile, nullable=False)
+    observacion = db.Column(db.Text, nullable=False)
+
+    # Relaciones
+    usuario = db.relationship('Usuario')
+    # La relación con Caso se define mejor en la clase Caso con backref, 
+    # pero aquí la definimos explícitamente para ordenarla.
+
 class Caso(db.Model):
     __tablename__ = 'casos'
     id = db.Column(db.Integer, primary_key=True)
@@ -218,6 +231,9 @@ class Caso(db.Model):
     acta_pdf_path = db.Column(db.String(255))
 
     auditorias = db.relationship('AuditoriaCaso', back_populates='caso', cascade="all, delete-orphan")
+
+    #Esta relación permite acceder a las gestiones de un caso ordenadas de la más reciente a la más antigua
+    gestiones = db.relationship('CasoGestion', backref='caso', order_by='desc(CasoGestion.fecha_movimiento)', cascade="all, delete-orphan")
 
     # Índice compuesto para dashboard (Solicitado)
     __table_args__ = (

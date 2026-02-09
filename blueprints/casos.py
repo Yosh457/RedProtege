@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, date
 from flask import Blueprint, render_template, abort, request, flash, redirect, url_for, send_file
 from flask_login import login_required, current_user
 from sqlalchemy import case, or_, func
-from models import db, Caso, Usuario, Rol, AuditoriaCaso, CatalogoEstablecimiento, CatalogoInstitucion, CatalogoRecinto, obtener_hora_chile
+from models import db, Caso, Usuario, Rol, AuditoriaCaso, CatalogoEstablecimiento, CatalogoInstitucion, CatalogoRecinto, obtener_hora_chile, CasoGestion
 from utils import check_password_change, registrar_log, enviar_aviso_asignacion, generar_acta_cierre_pdf, enviar_aviso_cierre, es_rut_valido, safe_int
 from datetime import datetime
 from openpyxl import Workbook
@@ -614,8 +614,23 @@ def gestionar_caso(id):
             caso.gestion_salud_mental = request.form.get('gestion_salud_mental')
             caso.gestion_cosam = request.form.get('gestion_cosam')
 
-            # E) Observaciones Finales
-            caso.observaciones_gestion = request.form.get('observaciones_gestion')
+            # E) Observaciones Finales (NUEVA LÓGICA: BITÁCORA)
+            # Obtenemos el texto del textarea nuevo
+            nueva_obs = request.form.get('nueva_observacion')
+            
+            if nueva_obs and nueva_obs.strip():
+                # Crear registro en la bitácora clínica
+                nueva_gestion = CasoGestion(
+                    caso_id=caso.id,
+                    usuario_id=current_user.id,
+                    fecha_movimiento=obtener_hora_chile(),
+                    observacion=nueva_obs.strip()
+                )
+                db.session.add(nueva_gestion)
+                
+                # Opcional: Actualizamos el campo legacy solo para tener "lo último" a mano rápido,
+                # pero la verdad reside en la tabla nueva.
+                caso.observaciones_gestion = nueva_obs.strip()
             
             # F) Auditoría del movimiento
             audit = AuditoriaCaso(
