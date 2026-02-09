@@ -5,20 +5,13 @@ from flask import Blueprint, render_template, abort, request, flash, redirect, u
 from flask_login import login_required, current_user
 from sqlalchemy import case, or_, func
 from models import db, Caso, Usuario, Rol, AuditoriaCaso, CatalogoEstablecimiento, CatalogoInstitucion, CatalogoRecinto, obtener_hora_chile
-from utils import check_password_change, registrar_log, enviar_aviso_asignacion, generar_acta_cierre_pdf, enviar_aviso_cierre, es_rut_valido
+from utils import check_password_change, registrar_log, enviar_aviso_asignacion, generar_acta_cierre_pdf, enviar_aviso_cierre, es_rut_valido, safe_int
 from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 casos_bp = Blueprint('casos', __name__, template_folder='../templates', url_prefix='/casos')
-
-def safe_int(value):
-    """Ayuda a convertir a int de forma segura, retornando None si falla o es vacío."""
-    try:
-        return int(value)
-    except (ValueError, TypeError):
-        return None
 
 def clean(value):
     """Convierte '' / espacios a None (para guardar NULL en BD)."""

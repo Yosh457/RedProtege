@@ -75,3 +75,10 @@ def es_rut_valido(rut: str) -> bool:
 
     except (ValueError, TypeError):
         return False
+    
+def safe_int(value):
+    """Ayuda a convertir a int de forma segura, retornando None si falla o es vacío."""
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None

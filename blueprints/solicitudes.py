@@ -1,18 +1,11 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from models import db, Caso, CatalogoRecinto, CatalogoVulneracion, CatalogoCiclo, CatalogoInstitucion
-from utils import registrar_log, es_rut_valido, enviar_aviso_nuevo_caso
+from utils import registrar_log, es_rut_valido, enviar_aviso_nuevo_caso, safe_int
 from datetime import datetime
 
 # Blueprint de Solicitudes (Acceso restringido a usuarios logueados, especialmente Rol 'Solicitante')
 solicitudes_bp = Blueprint('solicitudes', __name__, template_folder='../templates', url_prefix='/solicitudes')
-
-def safe_int(value):
-    """Ayuda a convertir a int de forma segura, retornando None si falla."""
-    try:
-        return int(value)
-    except (ValueError, TypeError):
-        return None
     
 def clean(value):
     """Convierte espacios vacios a None para guardar NULL en BD."""
