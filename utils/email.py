@@ -179,3 +179,30 @@ def enviar_aviso_cierre(caso, funcionario_cierre, pdf_path=None):
     """
     html = get_email_template(f"Caso Cerrado #{caso.folio_atencion}", contenido)
     return enviar_correo_generico(destinatarios, f"Caso Cerrado #{caso.folio_atencion}", html, adjunto_path=pdf_path)
+
+def enviar_credenciales_nuevo_usuario(usuario, password_texto_plano):
+    """
+    Envía correo de bienvenida con credenciales al nuevo usuario.
+    """
+    url_login = url_for('auth.login', _external=True)
+    
+    contenido = f"""
+        <p>Hola <strong>{usuario.nombre_completo}</strong>,</p>
+        <p>Bienvenido al Sistema <strong>RedProtege</strong>. Se ha creado tu cuenta de acceso.</p>
+        
+        <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #275c80; margin: 20px 0; border-radius: 4px;">
+            <p style="margin: 5px 0;"><strong>Usuario (Email):</strong> {usuario.email}</p>
+            <p style="margin: 5px 0;"><strong>Contraseña Temporal:</strong> {password_texto_plano}</p>
+        </div>
+
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{url_login}" style="background-color: #275c80; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+                Ingresar al Sistema
+            </a>
+        </div>
+        
+        <p style="color: #d9534f; font-size: 13px;"><strong>Importante:</strong> Por seguridad, el sistema te solicitará cambiar esta contraseña al iniciar sesión por primera vez.</p>
+    """
+    
+    html = get_email_template("Bienvenido a RedProtege", contenido)
+    return enviar_correo_generico(usuario.email, "Bienvenido - Credenciales de Acceso", html)

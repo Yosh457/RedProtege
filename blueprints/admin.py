@@ -6,7 +6,7 @@ from sqlalchemy import or_
 # Modelos
 from models import db, Usuario, Rol, Log, CatalogoCiclo, Caso
 # Utilidades
-from utils import registrar_log, admin_required
+from utils import registrar_log, admin_required, enviar_credenciales_nuevo_usuario
 
 admin_bp = Blueprint('admin', __name__, template_folder='../templates', url_prefix='/admin')
 
@@ -88,8 +88,16 @@ def crear_usuario():
         try:
             db.session.add(nuevo_usuario)
             db.session.commit()
+
+            # --- Log + Envío de Credenciales ---
             registrar_log("Creación Usuario", f"Admin creó a {nombre} ({email}) - Ciclo ID: {ciclo_final}")
-            flash('Usuario creado con éxito.', 'success')
+            
+            if enviar_credenciales_nuevo_usuario(nuevo_usuario, password):
+                flash(f'Usuario creado con éxito. Credenciales enviadas a {email}.', 'success')
+            else:
+                # Si falla el correo, avisamos al admin para que entregue la clave manual
+                flash(f'Usuario creado, pero FALLÓ el envío del correo. Entregue la clave manualmente: {password}', 'warning')
+            
             return redirect(url_for('admin.panel'))
         except Exception as e:
             db.session.rollback()
