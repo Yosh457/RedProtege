@@ -250,7 +250,7 @@
                 <div id="div_datos_denuncia" class="hidden border-t pt-4">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Institución</label>
+                            <label class="block text-sm font-medium text-gray-700">Institución*</label>
                             <select name="institucion_id" id="institucion_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-white" onchange="toggleOtro('institucion_id', 'div_institucion_otro')">
                                 <option value="">Seleccione...</option>
                                 {% for i in instituciones %}
@@ -262,8 +262,8 @@
                             </div>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Nombre Profesional (Quién realiza denuncia)</label>
-                            <input type="text" name="denuncia_nombre" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                            <label class="block text-sm font-medium text-gray-700">Nombre Profesional (Quién realiza denuncia)*</label>
+                            <input type="text" id="denuncia_nombre" name="denuncia_nombre" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Cargo Profesional</label>
@@ -379,10 +379,37 @@
     // 5. Toggle Denunciate
     function toggleDenuncia(mostrar) {
         const div = document.getElementById('div_datos_denuncia');
+        const institucion = document.getElementById('institucion_id');
+        const nombre = document.getElementById('denuncia_nombre');
+
+        if (!div) return;
+
         if (mostrar) {
             div.classList.remove('hidden');
+
+            // obligatorios
+            if (institucion) institucion.setAttribute('required', 'required');
+            if (nombre) nombre.setAttribute('required', 'required');
+
         } else {
             div.classList.add('hidden');
+
+            // deja de ser obligatorio + limpiar
+            if (institucion) {
+                institucion.removeAttribute('required');
+                institucion.value = "";
+            }
+            if (nombre) {
+                nombre.removeAttribute('required');
+                nombre.value = "";
+            }
+
+            // opcional: si tienes “otro institución” visible, lo escondes y limpias
+            const divOtro = document.getElementById('div_institucion_otro');
+            if (divOtro) divOtro.classList.add('hidden');
+
+            const inputOtro = document.querySelector('input[name="institucion_otro"]');
+            if (inputOtro) inputOtro.value = "";
         }
     }
 

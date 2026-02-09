@@ -127,6 +127,28 @@ def formulario():
                                        ciclos=ciclos, instituciones=instituciones,
                                        datos=f)
 
+            # --- NUEVA VALIDACIÓN: DENUNCIA OBLIGATORIA ---
+            # Verificamos si el usuario marcó "Sí" en el formulario
+            denuncia_flag_check = (f.get('denuncia_realizada') == '1')
+            
+            if denuncia_flag_check:
+                # Validar Institución (institucion_id_int ya fue procesado con safe_int arriba)
+                if not institucion_id_int:
+                    errores.append("Si se realizó denuncia, debe seleccionar la Institución.")
+                
+                # Validar Nombre Profesional
+                denuncia_nombre_check = clean(f.get('denuncia_nombre'))
+                if not denuncia_nombre_check:
+                    errores.append("Si se realizó denuncia, debe indicar el Nombre del Profesional.")
+
+            # Si hay errores, devolver formulario con datos previos
+            if errores:
+                for e in errores: flash(e, 'danger')
+                return render_template('solicitudes/formulario.html', 
+                                       recintos=recintos, vulneraciones=vulneraciones, 
+                                       ciclos=ciclos, instituciones=instituciones,
+                                       datos=f)
+            
             # 4. Lógica de Campos "Otro"
             # Recinto
             recinto_obj = CatalogoRecinto.query.get(recinto_id_int)
