@@ -9,14 +9,21 @@ from extensions import login_manager, csrf
 from models import db, Usuario
 
 def create_app():
+    # Inicializa Flask
     app = Flask(__name__)
     # Habilitar extensión 'do' para Jinja2 (útil para lógica en templates)
     app.jinja_env.add_extension('jinja2.ext.do')
+    # Cargar variables de entorno
     load_dotenv()
 
-    # --- CONFIGURACIÓN ---
+    # --- CONFIGURACIÓN DE SEGURIDAD ---
+    # Sin fallback: Si falta la variable, lanzará error al intentar usarla (comportamiento seguro)
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
+
+    if not app.config['SECRET_KEY']:
+        raise RuntimeError("Error crítico: No se ha configurado SECRET_KEY en el archivo .env")
     
+    # --- CONFIGURACIÓN DE BASE DE DATOS ---
     db_pass = os.getenv('MYSQL_PASSWORD')
     db_name = 'red_protege_db'  # ✅ BD Correcta
     
@@ -33,7 +40,7 @@ def create_app():
         "pool_recycle": 280
     }
 
-    # --- INICIALIZACIÓN ---
+    # --- INICIALIZACIÓN DE EXTENSIONES ---
     db.init_app(app)
     login_manager.init_app(app)
     csrf.init_app(app)
@@ -58,9 +65,9 @@ def create_app():
     from blueprints.solicitudes import solicitudes_bp
     app.register_blueprint(solicitudes_bp)
 
+    # Ruta raíz redirige al login
     @app.route('/')
     def index():
-        # Redirigir al login por ahora
         return redirect(url_for('auth.login')) 
     
     # --- ERRORES Y CACHÉ ---

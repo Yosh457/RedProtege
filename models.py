@@ -114,7 +114,7 @@ class Caso(db.Model):
     vulneraciones = db.relationship('CatalogoVulneracion', secondary=caso_vulneraciones, back_populates='casos')
     vulneracion_otro_texto = db.Column(db.Text)
     
-    folio_atencion = db.Column(db.String(50))
+    folio_atencion = db.Column(db.String(50), index=True)
     ingresado_por_nombre = db.Column(db.String(100))
     ingresado_por_cargo = db.Column(db.String(100))
 
@@ -124,7 +124,7 @@ class Caso(db.Model):
     
     # RELAJADO: Ahora pueden ser NULL si el solicitante no los tiene
     origen_nombres = db.Column(db.String(100), nullable=True)
-    origen_apellidos = db.Column(db.String(100), nullable=True)
+    origen_apellidos = db.Column(db.String(100), nullable=True, index=True)
 
     # Los campos 'origen_' obligatorios se llenarán con los datos del form para cumplir el NOT NULL
     origen_telefono = db.Column(db.String(20))
@@ -133,7 +133,7 @@ class Caso(db.Model):
     
     # Campos Nuevos Específicos
     paciente_doc_tipo = db.Column(db.Enum('RUT','DNI','NIP','OTRO'), default='RUT')
-    paciente_doc_numero = db.Column(db.String(50)) 
+    paciente_doc_numero = db.Column(db.String(50), index=True) 
     paciente_doc_otro_descripcion = db.Column(db.String(100))
     paciente_fecha_nacimiento = db.Column(db.Date) # Nueva columna principal
     paciente_domicilio = db.Column(db.Text)
@@ -157,7 +157,7 @@ class Caso(db.Model):
     denuncia_profesional_cargo = db.Column(db.String(100))
 
     # --- E) ASIGNACIÓN ---
-    asignado_a_usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'))
+    asignado_a_usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), index=True)
     asignado_por_usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'))
     asignado_at = db.Column(db.DateTime)
 
@@ -196,16 +196,16 @@ class Caso(db.Model):
     acompanante_direccion_numero = db.Column(db.String(50))
 
     # --- TRAZABILIDAD & GESTIÓN ---
-    fecha_ingreso = db.Column(db.DateTime, default=obtener_hora_chile)
+    fecha_ingreso = db.Column(db.DateTime, default=obtener_hora_chile, index=True)
     updated_at = db.Column(db.DateTime, default=obtener_hora_chile, onupdate=obtener_hora_chile)
 
-    ciclo_vital_id = db.Column(db.Integer, db.ForeignKey('catalogo_ciclos.id'), nullable=False) # Índice ya existe via FK o explícito
+    ciclo_vital_id = db.Column(db.Integer, db.ForeignKey('catalogo_ciclos.id'), nullable=False, index=True) # Índice ya existe via FK o explícito
     ciclo_vital = db.relationship('CatalogoCiclo', back_populates='casos')
 
     acciones_realizadas = db.Column(db.Text)
 
     estado = db.Column(db.Enum('PENDIENTE_RESCATAR', 'EN_SEGUIMIENTO', 'CERRADO'), 
-                       default='PENDIENTE_RESCATAR', nullable=False)
+                       default='PENDIENTE_RESCATAR', nullable=False, index=True)
     
     bloqueado = db.Column(db.Boolean, default=False)
     bloqueado_at = db.Column(db.DateTime)
