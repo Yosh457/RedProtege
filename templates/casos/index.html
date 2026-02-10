@@ -14,19 +14,36 @@
         </div>
 
         <div class="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-            <a href="{{ url_for('casos.exportar_excel', search=request.args.get('search', ''), estado=request.args.get('estado', '')) }}" 
-                class="bg-green-600 hover:bg-green-700 text-white font-medium py-2.5 px-5 rounded-lg shadow-sm transition flex items-center justify-center gap-2">
+
+            {% if current_user.rol.nombre in ['Admin', 'Referente'] %}
+            <form id="form-reporte" action="{{ url_for('casos.enviar_reporte_masivo') }}" method="POST" class="flex">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <button type="button" id="btn-abrir-modal-reporte"
+                        class="bg-purple-600 hover:bg-purple-700 text-white font-medium py-2.5 px-5 rounded-lg shadow-sm transition flex items-center justify-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
+                    Enviar Reporte
+                </button>
+            </form>
+            {% endif %}
+
+            <a href="{{ url_for('casos.exportar_excel', search=request.args.get('search', ''), estado=request.args.get('estado', '')) }}"
+            class="bg-green-600 hover:bg-green-700 text-white font-medium py-2.5 px-5 rounded-lg shadow-sm transition flex items-center justify-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
                 Exportar Excel
             </a>
+
             {% if current_user.rol.nombre in ['Admin', 'Referente', 'Solicitante'] %}
             <a href="{{ url_for('solicitudes.formulario') }}"
-                class="bg-gray-900 hover:bg-gray-800 text-white font-medium py-2.5 px-5 rounded-lg shadow-sm transition flex items-center justify-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                    </svg>
+            class="bg-gray-900 hover:bg-gray-800 text-white font-medium py-2.5 px-5 rounded-lg shadow-sm transition flex items-center justify-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
                 Nuevo Caso
             </a>
             {% endif %}
@@ -308,6 +325,50 @@
         {% endif %}
     </div>
 </div>
+<!-- Modal Enviar Reporte -->
+<div id="modal-reporte" class="fixed inset-0 z-50 hidden">
+    <!-- Overlay -->
+    <div id="modal-reporte-overlay" class="absolute inset-0 bg-black/50"></div>
+
+    <!-- Caja -->
+    <div class="relative min-h-screen flex items-center justify-center p-4">
+        <div class="w-full max-w-md bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+            <div class="px-6 py-4 border-b">
+                <h3 class="text-lg font-bold text-gray-900">Confirmar envío de reporte</h3>
+                <p class="text-sm text-gray-600 mt-1">
+                    Se enviará el Reporte Estadístico por correo a <strong>todos</strong> los usuarios activos.
+                </p>
+            </div>
+
+            <div class="px-6 py-4">
+                <div class="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
+                    <div class="text-amber-600 mt-0.5">
+                        <!-- Icono alerta -->
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 9v4m0 4h.01M10.29 3.86l-8.17 14.14A2 2 0 003.85 21h16.3a2 2 0 001.73-3.01L13.71 3.86a2 2 0 00-3.42 0z" />
+                        </svg>
+                    </div>
+                    <div class="text-sm text-amber-800">
+                        Confirma solo si estás seguro. Esta acción puede tardar unos segundos dependiendo de la cantidad de usuarios.
+                    </div>
+                </div>
+            </div>
+
+            <div class="px-6 py-4 bg-gray-50 flex justify-end gap-3">
+                <button type="button" id="btn-cancelar-reporte"
+                        class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-white transition">
+                    Cancelar
+                </button>
+                <button type="button" id="btn-confirmar-reporte"
+                        class="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition font-semibold">
+                    Sí, enviar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
@@ -456,5 +517,42 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 });
+// --- Modal Enviar Reporte ---
+(function () {
+    const form = document.getElementById('form-reporte');
+    const btnAbrir = document.getElementById('btn-abrir-modal-reporte');
+    const modal = document.getElementById('modal-reporte');
+    const overlay = document.getElementById('modal-reporte-overlay');
+    const btnCancelar = document.getElementById('btn-cancelar-reporte');
+    const btnConfirmar = document.getElementById('btn-confirmar-reporte');
+
+    if (!form || !btnAbrir || !modal) return;
+
+    function abrir() {
+        modal.classList.remove('hidden');
+        document.body.classList.add('overflow-hidden');
+    }
+
+    function cerrar() {
+        modal.classList.add('hidden');
+        document.body.classList.remove('overflow-hidden');
+    }
+
+    btnAbrir.addEventListener('click', abrir);
+    overlay.addEventListener('click', cerrar);
+    btnCancelar.addEventListener('click', cerrar);
+
+    // Esc cierra
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !modal.classList.contains('hidden')) cerrar();
+    });
+
+    // Confirmar -> deshabilitar para evitar doble click + enviar
+    btnConfirmar.addEventListener('click', () => {
+        btnConfirmar.disabled = true;
+        btnConfirmar.textContent = 'Enviando...';
+        form.submit();
+    });
+})();
 </script>
 {% endblock %}

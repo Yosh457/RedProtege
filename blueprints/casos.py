@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, abort, request, flash, redirect, u
 from flask_login import login_required, current_user
 from sqlalchemy import case, or_, func
 from models import db, Caso, Usuario, Rol, AuditoriaCaso, CatalogoEstablecimiento, CatalogoInstitucion, CatalogoRecinto, obtener_hora_chile, CasoGestion
-from utils import check_password_change, registrar_log, enviar_aviso_asignacion, generar_acta_cierre_pdf, enviar_aviso_cierre, es_rut_valido, safe_int
+from utils import check_password_change, registrar_log, enviar_aviso_asignacion, generar_acta_cierre_pdf, enviar_aviso_cierre, es_rut_valido, safe_int, enviar_reporte_estadistico_masivo
 from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -988,3 +988,65 @@ def exportar_excel():
         as_attachment=True,
         download_name=filename
     )
+
+@casos_bp.route('/enviar_reporte_masivo', methods=['POST'])
+@login_required
+def enviar_reporte_masivo():
+    """
+    Calcula estadísticas globales y las envía por correo a todos los usuarios activos.
+    Solo para Admin y Referentes.
+    """
+    # 1. Validar Permiso
+    if current_user.rol.nombre not in ['Admin', 'Referente']:
+        flash("No tiene permisos para realizar esta acción.", "danger")
+        return redirect(url_for('casos.index'))
+
+    try:
+        # 2. Calcular Estadísticas Globales (Snapshot)
+        stats_query = db.session.query(
+            func.count(Caso.id).label('total'),
+            func.sum(case((Caso.estado == 'PENDIENTE_RESCATAR', 1), else_=0)).label('pendientes'),
+            func.sum(case((Caso.estado == 'EN_SEGUIMIENTO', 1), else_=0)).label('seguimiento'),
+            func.sum(case((Caso.estado == 'CERRADO', 1), else_=0)).label('cerrados')
+        )
+
+        r = stats_query.first()
+        if not r:
+            flash("No fue posible calcular estadísticas del sistema.", "danger")
+            return redirect(url_for('casos.index'))
+        
+        stats = {
+            'total': int(r.total or 0),
+            'pendientes': int(r.pendientes or 0),
+            'seguimiento': int(r.seguimiento or 0),
+            'cerrados': int(r.cerrados or 0)
+        }
+
+        # 3) Obtener destinatarios (usuarios activos con email válido)
+        usuarios_activos = Usuario.query.filter(Usuario.activo == True, Usuario.email.isnot(None), Usuario.email != '').all()
+        
+        # Limpieza + deduplicación
+        destinatarios_bcc = []
+        vistos = set()
+        for u in usuarios_activos:
+            email = (u.email or "").strip().lower()
+            if email and email not in vistos:
+                vistos.add(email)
+                destinatarios_bcc.append(email)
+
+        if not destinatarios_bcc:
+            flash("No se encontraron usuarios activos con correo para enviar el reporte.", "warning")
+            return redirect(url_for('casos.index'))
+
+        # 4. Enviar Correo Masivo
+        if enviar_reporte_estadistico_masivo(destinatarios_bcc, stats):
+            registrar_log("Reporte Masivo", f"Enviado por {current_user.email} a {len(destinatarios_bcc)} destinatarios.")
+            flash(f"Reporte enviado exitosamente a {len(destinatarios_bcc)} usuarios.", "success")
+        else:
+            flash("Hubo un error al intentar enviar el reporte por correo.", "danger")
+
+    except Exception as e:
+        print(f"Error reporte masivo: {e}")
+        flash(f"Error interno: {str(e)}", "danger")
+
+    return redirect(url_for('casos.index'))

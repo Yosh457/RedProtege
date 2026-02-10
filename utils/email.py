@@ -1,10 +1,11 @@
 import os
 import smtplib
+from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 from email.utils import formataddr
-from flask import url_for
+from flask import url_for, current_app
 
 # --- PLANTILLA BASE HTML PARA CORREOS (DISEÑO UNIFICADO) ---
 def get_email_template(titulo, contenido):
@@ -23,40 +24,118 @@ def get_email_template(titulo, contenido):
     </div>
     """
 
-def enviar_correo_generico(destinatarios, asunto, cuerpo_html, adjunto_path=None):
+def enviar_correo_generico(destinatarios, asunto, cuerpo_html, adjunto_path=None, bcc=None):
+    """
+    Envía un correo utilizando SMTP (Gmail) de forma segura y consistente.
+
+    - 'destinatarios' (To): lista o string. Visible en el correo.
+    - 'bcc' (BCC): lista o string. NO visible en el correo (privacidad).
+    - Importante: usamos server.send_message(..., to_addrs=...) para controlar
+      el "envelope" SMTP y NO depender de headers Bcc.
+
+    Esto evita:
+    - exponer correos en envíos masivos
+    - depender de que 'send_message' elimine headers Bcc
+    """
     remitente = os.getenv("EMAIL_USUARIO")
     contrasena = os.getenv("EMAIL_CONTRASENA")
-    
-    if not remitente or not contrasena or not destinatarios:
-        print("ERROR: Faltan credenciales o destinatarios.")
+
+    # Validación mínima de credenciales
+    if not remitente or not contrasena:
+        print("ERROR: Faltan credenciales EMAIL_USUARIO / EMAIL_CONTRASENA en .env")
         return False
 
+    # -----------------------------
+    # 1) Normalizar inputs a listas
+    # -----------------------------
+    if destinatarios is None:
+        destinatarios = []
     if isinstance(destinatarios, str):
         destinatarios = [destinatarios]
 
+    if bcc is None:
+        bcc = []
+    if isinstance(bcc, str):
+        bcc = [bcc]
+
+    # -------------------------------------------------
+    # 2) Limpiar vacíos/None y quitar duplicados (orden)
+    # -------------------------------------------------
+    destinatarios = [d.strip() for d in destinatarios if d and str(d).strip()]
+    bcc = [d.strip() for d in bcc if d and str(d).strip()]
+
+    # Deduplicar manteniendo el orden
+    destinatarios = list(dict.fromkeys(destinatarios))
+    bcc = list(dict.fromkeys(bcc))
+
+    # Si no hay nadie en To ni Bcc, no tiene sentido enviar
+    if not destinatarios and not bcc:
+        print("ERROR: Faltan destinatarios (To/Bcc).")
+        return False
+
+    # -------------------------------------------------------------
+    # 3) Construir el mensaje (headers visibles)
+    # -------------------------------------------------------------
     msg = MIMEMultipart()
-    msg['Subject'] = asunto
-    msg['From'] = formataddr(('RedProtege Notificaciones', remitente))
-    msg['To'] = ", ".join(destinatarios)
+    msg["Subject"] = asunto
+    msg["From"] = formataddr(("RedProtege Notificaciones", remitente))
 
-    msg.attach(MIMEText(cuerpo_html, 'html'))
+    # "To" visible: si no hay destinatarios, ponemos el remitente
+    # (así el correo no queda con To vacío)
+    msg["To"] = ", ".join(destinatarios) if destinatarios else remitente
 
-    # Adjuntar archivo si existe (para el PDF de cierre)
+    # OJO: NO seteamos msg["Bcc"] a propósito.
+    # La privacidad la manejamos con "to_addrs" en send_message.
+
+    # Cuerpo HTML
+    msg.attach(MIMEText(cuerpo_html, "html"))
+
+    # Adjuntar archivo si corresponde
     if adjunto_path and os.path.exists(adjunto_path):
         try:
             with open(adjunto_path, "rb") as f:
                 part = MIMEApplication(f.read(), Name=os.path.basename(adjunto_path))
-                part['Content-Disposition'] = f'attachment; filename="{os.path.basename(adjunto_path)}"'
+                part["Content-Disposition"] = f'attachment; filename="{os.path.basename(adjunto_path)}"'
                 msg.attach(part)
         except Exception as e:
             print(f"Error adjuntando archivo: {e}")
 
+    # -------------------------------------------------------------
+    # 4) Enviar: definimos explícitamente el "sobre" (envelope SMTP)
+    # -------------------------------------------------------------
+    # Los receptores reales son: To visibles + BCC ocultos
+    # Si To estaba vacío, el header To quedó como remitente, pero igual
+    # garantizamos que el remitente esté en recipients para que el envío tenga
+    # un destinatario visible coherente.
+    recipients = []
+    if destinatarios:
+        recipients.extend(destinatarios)
+    else:
+        recipients.append(remitente)
+
+    if bcc:
+        recipients.extend(bcc)
+
+    # Deduplicar recipients por si se repiten
+    recipients = list(dict.fromkeys([r for r in recipients if r]))
+
     try:
-        with smtplib.SMTP('smtp.gmail.com', 587) as server:
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
             server.starttls()
             server.login(remitente, contrasena)
-            server.send_message(msg)
+
+            # MODERNO + CONTROL:
+            # - send_message es moderno
+            # - to_addrs controla a quién se envía realmente (incluye BCC)
+            # - No dependemos del header Bcc (ni lo exponemos)
+            server.send_message(
+                msg,
+                from_addr=remitente,
+                to_addrs=recipients
+            )
+
         return True
+
     except Exception as e:
         print(f"Error enviando correo '{asunto}': {e}")
         return False
@@ -206,3 +285,198 @@ def enviar_credenciales_nuevo_usuario(usuario, password_texto_plano):
     
     html = get_email_template("Bienvenido a RedProtege", contenido)
     return enviar_correo_generico(usuario.email, "Bienvenido - Credenciales de Acceso", html)
+
+def enviar_reporte_estadistico_masivo(destinatarios_bcc, stats):
+    """
+    Genera el reporte HTML y lo envía de forma masiva y PRIVADA:
+
+    - To (visible): el remitente/sistema (EMAIL_USUARIO)
+    - Receptores reales: van en BCC, pero controlados por to_addrs (envelope SMTP)
+      para no depender del header Bcc.
+
+    'destinatarios_bcc' debe ser lista de emails (o string, pero ideal lista).
+    'stats' debe traer: total, pendientes, seguimiento, cerrados.
+    """
+    remitente = os.getenv("EMAIL_USUARIO")
+    if not remitente:
+        print("ERROR: EMAIL_USUARIO no está configurado en .env")
+        return False
+
+    # Fecha en español sin depender del locale del sistema
+    meses = {
+        1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
+        7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
+    }
+    now = datetime.now()
+    fecha_larga = f"{now.day:02d} de {meses[now.month]}, {now.year}"
+    fecha_corta = now.strftime("%d/%m/%Y")
+
+    # Helper % seguro
+    def pct(val, total):
+        return round((val / total * 100), 1) if total and total > 0 else 0
+
+    # Datos
+    total = int(stats.get("total", 0) or 0)
+    pendientes = int(stats.get("pendientes", 0) or 0)
+    seguimiento = int(stats.get("seguimiento", 0) or 0)
+    cerrados = int(stats.get("cerrados", 0) or 0)
+
+    pct_p = pct(pendientes, total)
+    pct_s = pct(seguimiento, total)
+    pct_c = pct(cerrados, total)
+
+    # IMPORTANTE: en email, preferir tablas (Outlook-friendly)
+    contenido = f"""
+    <div style="font-family: 'Segoe UI', Helvetica, Arial, sans-serif; color:#111827; line-height:1.6;">
+
+        <p style="margin:0 0 14px; font-size:15px;">Estimado equipo,</p>
+        <p style="margin:0 0 22px; font-size:15px; color:#374151;">
+            Compartimos el <strong>Resumen de Gestión</strong> actualizado al día de la fecha
+            (<strong>{fecha_larga}</strong>).
+            A continuación se detallan las métricas clave y el estado actual de los casos.
+        </p>
+
+        <h3 style="margin:0 0 14px; font-size:16px; border-bottom:2px solid #E5E7EB; padding-bottom:8px;">
+            📊 Resumen Global
+        </h3>
+
+        <!-- KPIs -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 26px;">
+            <tr>
+                <td width="25%" style="padding-right:8px;">
+                    <div style="background:#F9FAFB; border:1px solid #E5E7EB; border-radius:10px; padding:14px; text-align:center;">
+                        <div style="font-size:28px; font-weight:800; color:#111827; line-height:1;">{total}</div>
+                        <div style="font-size:11px; font-weight:700; color:#6B7280; text-transform:uppercase; letter-spacing:.6px; margin-top:6px;">Total</div>
+                    </div>
+                </td>
+                <td width="25%" style="padding:0 8px;">
+                    <div style="background:#FFFBEB; border:1px solid #FEF3C7; border-radius:10px; padding:14px; text-align:center;">
+                        <div style="font-size:28px; font-weight:800; color:#D97706; line-height:1;">{pendientes}</div>
+                        <div style="font-size:11px; font-weight:700; color:#D97706; text-transform:uppercase; letter-spacing:.6px; margin-top:6px;">Pendientes</div>
+                    </div>
+                </td>
+                <td width="25%" style="padding:0 8px;">
+                    <div style="background:#EFF6FF; border:1px solid #DBEAFE; border-radius:10px; padding:14px; text-align:center;">
+                        <div style="font-size:28px; font-weight:800; color:#2563EB; line-height:1;">{seguimiento}</div>
+                        <div style="font-size:11px; font-weight:700; color:#2563EB; text-transform:uppercase; letter-spacing:.6px; margin-top:6px;">Seguimiento</div>
+                    </div>
+                </td>
+                <td width="25%" style="padding-left:8px;">
+                    <div style="background:#ECFDF5; border:1px solid #D1FAE5; border-radius:10px; padding:14px; text-align:center;">
+                        <div style="font-size:28px; font-weight:800; color:#059669; line-height:1;">{cerrados}</div>
+                        <div style="font-size:11px; font-weight:700; color:#059669; text-transform:uppercase; letter-spacing:.6px; margin-top:6px;">Cerrados</div>
+                    </div>
+                </td>
+            </tr>
+        </table>
+
+        <h3 style="margin:0 0 14px; font-size:16px; border-bottom:2px solid #E5E7EB; padding-bottom:8px;">
+            🕒 Distribución de Casos
+        </h3>
+
+        <!-- Item: Pendiente -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 14px;">
+            <tr>
+                <td style="padding:0 0 6px;">
+                    <div style="font-size:14px; font-weight:700; color:#374151;">Pendiente Rescatar</div>
+                    <div style="font-size:12px; color:#6B7280;">Acción requerida inmediata</div>
+                </td>
+                <td align="right" style="padding:0 0 6px;">
+                    <div style="font-size:14px; font-weight:800; color:#D97706;">{pendientes} Casos</div>
+                    <div style="font-size:11px; color:#9CA3AF;">{pct_p}% del total</div>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">
+                    <div style="background:#F3F4F6; height:10px; border-radius:999px; overflow:hidden;">
+                        <div style="background:#F59E0B; width:{pct_p}%; height:10px; border-radius:999px;"></div>
+                    </div>
+                </td>
+            </tr>
+        </table>
+
+        <!-- Item: Seguimiento -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 14px;">
+            <tr>
+                <td style="padding:0 0 6px;">
+                    <div style="font-size:14px; font-weight:700; color:#374151;">En Seguimiento</div>
+                    <div style="font-size:12px; color:#6B7280;">En proceso de gestión</div>
+                </td>
+                <td align="right" style="padding:0 0 6px;">
+                    <div style="font-size:14px; font-weight:800; color:#2563EB;">{seguimiento} Casos</div>
+                    <div style="font-size:11px; color:#9CA3AF;">{pct_s}% del total</div>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">
+                    <div style="background:#F3F4F6; height:10px; border-radius:999px; overflow:hidden;">
+                        <div style="background:#3B82F6; width:{pct_s}%; height:10px; border-radius:999px;"></div>
+                    </div>
+                </td>
+            </tr>
+        </table>
+
+        <!-- Item: Cerrados -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 22px;">
+            <tr>
+                <td style="padding:0 0 6px;">
+                    <div style="font-size:14px; font-weight:700; color:#374151;">Cerrados</div>
+                    <div style="font-size:12px; color:#6B7280;">Gestión completada exitosamente</div>
+                </td>
+                <td align="right" style="padding:0 0 6px;">
+                    <div style="font-size:14px; font-weight:800; color:#059669;">{cerrados} Casos</div>
+                    <div style="font-size:11px; color:#9CA3AF;">{pct_c}% del total</div>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">
+                    <div style="background:#F3F4F6; height:10px; border-radius:999px; overflow:hidden;">
+                        <div style="background:#10B981; width:{pct_c}%; height:10px; border-radius:999px;"></div>
+                    </div>
+                </td>
+            </tr>
+        </table>
+
+        <!-- Barra proporcional -->
+        <div style="border-top:1px solid #E5E7EB; padding-top:16px; margin-top:10px;">
+            <div style="font-size:11px; color:#9CA3AF; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">
+                Visualización proporcional
+            </div>
+            <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:8px; overflow:hidden;">
+                <tr>
+                    <td style="height:12px; background:#F59E0B; width:{pct_p}%;"></td>
+                    <td style="height:12px; background:#3B82F6; width:{pct_s}%;"></td>
+                    <td style="height:12px; background:#10B981; width:{pct_c}%;"></td>
+                </tr>
+            </table>
+            <div style="margin-top:8px; font-size:11px; color:#6B7280;">
+                Pendiente • Seguimiento • Cerrado
+            </div>
+        </div>
+
+        <!-- CTA -->
+        <div style="text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #E5E7EB;">
+            <h4 style="margin: 0 0 10px; color: #111827; font-size: 15px;">Accede a los detalles completos</h4>
+            <p style="margin: 0 0 20px; font-size: 13px; color: #6B7280;">
+                Para revisar el detalle de cada caso y gestionar las tareas pendientes, ingresa directamente al panel de control.
+            </p>
+            <a href="{url_for('auth.login', _external=True)}" 
+                style="display: inline-block; background-color: #275C80; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                Ir al Dashboard →
+            </a>
+        </div>
+
+    </div>
+    """
+
+    html = get_email_template(f"Reporte de Gestión - {fecha_corta}", contenido)
+
+    # Envío masivo PRIVADO:
+    # - To: el sistema (remitente)
+    # - BCC: todos los usuarios
+    return enviar_correo_generico(
+        destinatarios=[remitente],  # visible en To
+        asunto=f"Reporte de Gestión RedProtege - {fecha_corta}",
+        cuerpo_html=html,
+        bcc=destinatarios_bcc
+    )
