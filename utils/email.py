@@ -480,3 +480,90 @@ def enviar_reporte_estadistico_masivo(destinatarios_bcc, stats):
         cuerpo_html=html,
         bcc=destinatarios_bcc
     )
+
+def enviar_aviso_subrogancia(titular, subrogante, es_activacion=True):
+    """
+    Notifica al SUBROGANTE por correo cuando:
+    - es_activacion=True: fue designado como subrogante del TITULAR
+    - es_activacion=False: se revoca/finaliza la subrogancia
+
+    Requisitos:
+    - titular y subrogante: objetos Usuario (con nombre_completo, email, ciclo_asignado opcional)
+    """
+    # Validación mínima
+    if not subrogante or not getattr(subrogante, "email", None):
+        print("ERROR: Subrogante sin email. No se puede notificar.")
+        return False
+
+    # Títulos / textos dinámicos
+    tipo = "Activación" if es_activacion else "Finalización"
+    color = "#275C80" if es_activacion else "#6B7280"  # azul institucional vs gris
+
+    nombre_titular = getattr(titular, "nombre_completo", "Titular")
+    nombre_subrogante = getattr(subrogante, "nombre_completo", "Usuario")
+
+    ciclo_titular = "Sin ciclo"
+    try:
+        if getattr(titular, "ciclo_asignado", None) and getattr(titular.ciclo_asignado, "nombre", None):
+            ciclo_titular = titular.ciclo_asignado.nombre
+        elif getattr(titular, "ciclo_asignado_id", None) is None:
+            # Por si tu regla considera "global" cuando no hay ciclo asignado
+            ciclo_titular = "Global"
+    except Exception:
+        ciclo_titular = "Sin ciclo"
+
+    # Link a la bandeja
+    url_bandeja = url_for("casos.index", _external=True)
+
+    # Mensajes
+    if es_activacion:
+        intro = f"""
+            <p>Hola <strong>{nombre_subrogante}</strong>,</p>
+            <p>
+                Se te informa que el referente <strong>{nombre_titular}</strong> te ha designado como su
+                <strong>Subrogante</strong>.
+            </p>
+        """
+        detalle = """
+            <p>
+                A partir de ahora, tendrás acceso para visualizar y gestionar los casos del ciclo del titular
+                desde tu bandeja.
+            </p>
+        """
+    else:
+        intro = f"""
+            <p>Hola <strong>{nombre_subrogante}</strong>,</p>
+            <p>
+                Se te informa que la subrogancia del referente <strong>{nombre_titular}</strong> ha finalizado.
+            </p>
+        """
+        detalle = """
+            <p>
+                Desde este momento, ya no tendrás acceso a los casos del ciclo del titular.
+            </p>
+        """
+
+    contenido = f"""
+        {intro}
+
+        <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid {color}; margin: 20px 0; border-radius: 6px;">
+            <p style="margin: 6px 0;"><strong>Acción:</strong> {tipo} de Subrogancia</p>
+            <p style="margin: 6px 0;"><strong>Titular:</strong> {nombre_titular}</p>
+            <p style="margin: 6px 0;"><strong>Ciclo del titular:</strong> {ciclo_titular}</p>
+            <p style="margin: 6px 0;"><strong>Fecha:</strong> {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
+        </div>
+
+        {detalle}
+
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{url_bandeja}" style="background-color: #275c80; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">
+                Ir a Bandeja de Casos
+            </a>
+        </div>
+    """
+
+    html = get_email_template(f"Aviso de Subrogancia - {tipo}", contenido)
+    asunto = f"RedProtege: {tipo} de Subrogancia"
+
+    # Enviar al subrogante (To visible)
+    return enviar_correo_generico(subrogante.email, asunto, html)

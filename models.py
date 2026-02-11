@@ -82,6 +82,16 @@ class Usuario(db.Model, UserMixin):
     ciclo_asignado_id = db.Column(db.Integer, db.ForeignKey('catalogo_ciclos.id'), index=True, nullable=True)
     ciclo_asignado = db.relationship('CatalogoCiclo', back_populates='usuarios')
 
+    # --- NUEVO: SUBROGANCIA (Delegación de funciones) ---
+    # Indica que ESTE usuario está actuando como subrogante del usuario referenciado aquí.
+    # Ejemplo: Si yo soy Juan y esta columna tiene el ID de Pedro, yo puedo ver lo de Pedro.
+    subrogante_de_usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=True, index=True)
+
+    # Relación Auto-Referencial
+    # 'subrogante_de': Accede al usuario Titular al que estoy reemplazando.
+    # 'subrogantes_activos': (Backref) Accede a quiénes me están reemplazando a mí.
+    subrogante_de = db.relationship('Usuario', remote_side=[id], backref=db.backref('subrogantes_activos', lazy='dynamic'), lazy='joined')
+
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
 

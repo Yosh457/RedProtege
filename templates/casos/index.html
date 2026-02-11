@@ -15,6 +15,32 @@
 
         <div class="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
 
+            {% if current_user.rol.nombre == 'Referente' %}
+                {% if subrogante_activo %}
+                    <!-- Deshabilitar (con modal bonito) -->
+                    <button type="button" id="btn-abrir-modal-subrogancia-off"
+                            class="bg-red-100 hover:bg-red-200 text-red-700 border border-red-200 font-medium py-2.5 px-5 rounded-lg shadow-sm transition flex items-center justify-center gap-2"
+                            title="Subrogante activo: {{ subrogante_activo.nombre_completo }}">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                        </svg>
+                        Deshabilitar Subrogante
+                        <span class="text-xs font-semibold opacity-80">({{ subrogante_activo.nombre_completo }})</span>
+                    </button>
+                {% else %}
+                    <!-- Habilitar (con modal select) -->
+                    <button type="button" id="btn-abrir-modal-subrogancia-on"
+                            {% if not candidatos_subrogancia %}disabled{% endif %}
+                            class="bg-orange-100 hover:bg-orange-200 text-orange-700 border border-orange-200 font-medium py-2.5 px-5 rounded-lg shadow-sm transition flex items-center justify-center gap-2
+                                {% if not candidatos_subrogancia %}opacity-50 cursor-not-allowed{% endif %}">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                        Habilitar Subrogante
+                    </button>
+                {% endif %}
+            {% endif %}
+
             {% if current_user.rol.nombre in ['Admin', 'Referente'] %}
             <form id="form-reporte" action="{{ url_for('casos.enviar_reporte_masivo') }}" method="POST" class="flex">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
@@ -377,6 +403,113 @@
     </div>
 </div>
 
+<!-- Modal Subrogancia ON -->
+<div id="modal-subrogancia-on" class="fixed inset-0 z-50 hidden">
+    <div id="modal-subrogancia-on-overlay" class="absolute inset-0 bg-black/50"></div>
+
+    <div class="relative min-h-screen flex items-center justify-center p-4">
+        <div class="w-full max-w-md bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+            <form id="form-subrogancia-on" action="{{ url_for('casos.gestionar_subrogancia') }}" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <input type="hidden" name="accion" value="activar"/>
+
+                <div class="px-6 py-4 border-b bg-gray-50">
+                    <h3 class="text-lg font-bold text-gray-900">Habilitar Subrogancia</h3>
+                    <p class="text-sm text-gray-600 mt-1">Selecciona un referente para delegar temporalmente.</p>
+                </div>
+
+                <div class="px-6 py-6">
+                    {% if not candidatos_subrogancia %}
+                        <p class="text-sm text-red-600 font-medium mb-3">No hay referentes disponibles para subrogancia.</p>
+                    {% endif %}
+
+                    <label class="block text-sm font-bold text-gray-700 mb-2">Referente Subrogante</label>
+                    <select name="subrogante_id"
+                            class="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            {% if candidatos_subrogancia %}required{% else %}disabled{% endif %}>
+                        <option value="">-- Seleccionar --</option>
+                        {% for cand in candidatos_subrogancia %}
+                            <option value="{{ cand.id }}">
+                                {{ cand.nombre_completo }} ({{ cand.ciclo_asignado.nombre if cand.ciclo_asignado else 'Sin ciclo' }})
+                            </option>
+                        {% endfor %}
+                    </select>
+
+                    <div class="mt-4 flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
+                        <div class="text-amber-600 mt-0.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M12 9v4m0 4h.01M10.29 3.86l-8.17 14.14A2 2 0 003.85 21h16.3a2 2 0 001.73-3.01L13.71 3.86a2 2 0 00-3.42 0z" />
+                            </svg>
+                        </div>
+                        <p class="text-sm text-amber-800">
+                            El subrogante tendrá acceso a tu bandeja (ciclo vital) hasta que deshabilites esta opción.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="px-6 py-4 bg-gray-50 flex justify-end gap-3 border-t">
+                    <button type="button" id="btn-cancelar-subrogancia-on"
+                            class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-white transition">
+                        Cancelar
+                    </button>
+                    <button type="submit" id="btn-confirmar-subrogancia-on"
+                            class="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition font-semibold"
+                            {% if not candidatos_subrogancia %}disabled{% endif %}>
+                        Activar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Subrogancia OFF -->
+<div id="modal-subrogancia-off" class="fixed inset-0 z-50 hidden">
+    <div id="modal-subrogancia-off-overlay" class="absolute inset-0 bg-black/50"></div>
+
+    <div class="relative min-h-screen flex items-center justify-center p-4">
+        <div class="w-full max-w-md bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+            <form id="form-subrogancia-off" action="{{ url_for('casos.gestionar_subrogancia') }}" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <input type="hidden" name="accion" value="desactivar"/>
+
+                <div class="px-6 py-4 border-b">
+                    <h3 class="text-lg font-bold text-gray-900">Deshabilitar Subrogancia</h3>
+                    <p class="text-sm text-gray-600 mt-1">
+                        Se removerá el acceso del subrogante actual:
+                        <strong>{{ subrogante_activo.nombre_completo if subrogante_activo else '' }}</strong>
+                    </p>
+                </div>
+
+                <div class="px-6 py-4">
+                    <div class="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-3">
+                        <div class="text-red-600 mt-0.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z"/>
+                            </svg>
+                        </div>
+                        <p class="text-sm text-red-800">
+                            Confirmar esta acción finalizará la subrogancia inmediatamente.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="px-6 py-4 bg-gray-50 flex justify-end gap-3 border-t">
+                    <button type="button" id="btn-cancelar-subrogancia-off"
+                            class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-white transition">
+                        Cancelar
+                    </button>
+                    <button type="submit" id="btn-confirmar-subrogancia-off"
+                            class="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition font-semibold">
+                        Sí, deshabilitar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
@@ -561,6 +694,60 @@ document.addEventListener('DOMContentLoaded', function () {
         btnConfirmar.textContent = 'Enviando...';
         form.submit();
     });
+})();
+// --- Modal Subrogancia (ON/OFF) ---
+(function () {
+    const btnAbrirOn = document.getElementById('btn-abrir-modal-subrogancia-on');
+    const btnAbrirOff = document.getElementById('btn-abrir-modal-subrogancia-off');
+
+    const modalOn = document.getElementById('modal-subrogancia-on');
+    const overlayOn = document.getElementById('modal-subrogancia-on-overlay');
+    const btnCancelarOn = document.getElementById('btn-cancelar-subrogancia-on');
+    const formOn = document.getElementById('form-subrogancia-on');
+    const btnConfirmarOn = document.getElementById('btn-confirmar-subrogancia-on');
+
+    const modalOff = document.getElementById('modal-subrogancia-off');
+    const overlayOff = document.getElementById('modal-subrogancia-off-overlay');
+    const btnCancelarOff = document.getElementById('btn-cancelar-subrogancia-off');
+    const formOff = document.getElementById('form-subrogancia-off');
+    const btnConfirmarOff = document.getElementById('btn-confirmar-subrogancia-off');
+
+    function lockBody(lock) {
+        if (lock) document.body.classList.add('overflow-hidden');
+        else document.body.classList.remove('overflow-hidden');
+    }
+
+    function abrir(modal) { if (modal) { modal.classList.remove('hidden'); lockBody(true); } }
+    function cerrar(modal) { if (modal) { modal.classList.add('hidden'); lockBody(false); } }
+
+    if (btnAbrirOn && !btnAbrirOn.disabled) btnAbrirOn.addEventListener('click', () => abrir(modalOn));
+    if (btnAbrirOff) btnAbrirOff.addEventListener('click', () => abrir(modalOff));
+
+    if (overlayOn) overlayOn.addEventListener('click', () => cerrar(modalOn));
+    if (btnCancelarOn) btnCancelarOn.addEventListener('click', () => cerrar(modalOn));
+
+    if (overlayOff) overlayOff.addEventListener('click', () => cerrar(modalOff));
+    if (btnCancelarOff) btnCancelarOff.addEventListener('click', () => cerrar(modalOff));
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        if (modalOn && !modalOn.classList.contains('hidden')) cerrar(modalOn);
+        if (modalOff && !modalOff.classList.contains('hidden')) cerrar(modalOff);
+    });
+
+    if (formOn && btnConfirmarOn) {
+        formOn.addEventListener('submit', () => {
+            btnConfirmarOn.disabled = true;
+            btnConfirmarOn.textContent = 'Activando...';
+        });
+    }
+
+    if (formOff && btnConfirmarOff) {
+        formOff.addEventListener('submit', () => {
+            btnConfirmarOff.disabled = true;
+            btnConfirmarOff.textContent = 'Desactivando...';
+        });
+    }
 })();
 </script>
 {% endblock %}

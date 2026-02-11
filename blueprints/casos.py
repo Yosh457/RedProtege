@@ -5,8 +5,7 @@ from flask import Blueprint, render_template, abort, request, flash, redirect, u
 from flask_login import login_required, current_user
 from sqlalchemy import case, or_, func
 from models import db, Caso, Usuario, Rol, AuditoriaCaso, CatalogoEstablecimiento, CatalogoInstitucion, CatalogoRecinto, obtener_hora_chile, CasoGestion
-from utils import check_password_change, registrar_log, enviar_aviso_asignacion, generar_acta_cierre_pdf, enviar_aviso_cierre, es_rut_valido, safe_int, enviar_reporte_estadistico_masivo
-from datetime import datetime
+from utils import check_password_change, registrar_log, enviar_aviso_asignacion, generar_acta_cierre_pdf, enviar_aviso_cierre, enviar_aviso_subrogancia, es_rut_valido, safe_int, enviar_reporte_estadistico_masivo
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -60,21 +59,71 @@ def index():
     titulo_vista = "Vista Global"
 
     # =========================================================
-    # A. FILTROS DE SEGURIDAD (ROLES)
+    # A. FILTROS DE SEGURIDAD (ROLES) + SUBROGANCIA
     # =========================================================
     filters = []
 
+    # Datos para UI Subrogancia (solo referentes)
+    candidatos_subrogancia = []
+    subrogante_activo = None  # objeto Usuario (el que me está subrogando)
+
     if rol_nombre == 'Admin':
         pass
+
     elif rol_nombre in ['Referente', 'Visualizador']:
+        ciclos_permitidos = []
+
+        # 1) Ciclo propio (si tiene)
         if current_user.ciclo_asignado_id:
-            filters.append(Caso.ciclo_vital_id == current_user.ciclo_asignado_id)
+            ciclos_permitidos.append(current_user.ciclo_asignado_id)
             titulo_vista = f"Ciclo {current_user.ciclo_asignado.nombre}"
         else:
             titulo_vista = "Vista Global (Todos los Ciclos)"
+
+        # 2) Ciclo subrogado (si soy subrogante de alguien)
+        if current_user.subrogante_de and current_user.subrogante_de.ciclo_asignado_id:
+            ciclo_sub = current_user.subrogante_de.ciclo_asignado_id
+            if ciclo_sub not in ciclos_permitidos:
+                ciclos_permitidos.append(ciclo_sub)
+
+            # Título más informativo
+            if current_user.ciclo_asignado_id:
+                titulo_vista = f"Ciclo {current_user.ciclo_asignado.nombre} + Subrogancia ({current_user.subrogante_de.ciclo_asignado.nombre})"
+            else:
+                titulo_vista = f"Subrogancia ({current_user.subrogante_de.ciclo_asignado.nombre})"
+
+        # Aplicar filtro por ciclos permitidos si corresponde
+        if ciclos_permitidos:
+            filters.append(Caso.ciclo_vital_id.in_(ciclos_permitidos))
+        else:
+            # Si no tiene ciclo propio ni subrogado:
+            # si tu regla es que "sin ciclo" = global, no filtramos.
+            # (mantiene la lógica actual)
+            pass
+
+        # --- UI Subrogancia: solo si soy Referente (no Visualizador) ---
+        if rol_nombre == 'Referente':
+            # a) Lista de candidatos (otros referentes activos, distintos a mí)
+            candidatos_subrogancia = Usuario.query.join(Rol).filter(
+                Rol.nombre == 'Referente',
+                Usuario.activo == True,
+                Usuario.id != current_user.id
+            ).order_by(Usuario.nombre_completo).all()
+
+            # b) Subrogante activo (quién me está subrogando a mí)
+            # OJO: subrogantes_activos es dynamic (AppenderQuery), así que usamos first()
+            subrogante_activo = None
+            if getattr(current_user, "subrogantes_activos", None):
+                try:
+                    subrogante_activo = current_user.subrogantes_activos.first()
+                except Exception:
+                    # Si por alguna razón NO es query y sí es lista, igual funcionará
+                    subrogante_activo = current_user.subrogantes_activos[0] if current_user.subrogantes_activos else None
+
     elif rol_nombre == 'Funcionario':
         filters.append(Caso.asignado_a_usuario_id == current_user.id)
         titulo_vista = "Mis Casos Asignados"
+
     else:
         abort(403)
 
@@ -259,7 +308,9 @@ def index():
         'casos/index.html',
         pagination=pagination,
         nombre_filtro=titulo_vista,
-        stats=dashboard_data
+        stats=dashboard_data,
+        candidatos_subrogancia=candidatos_subrogancia,
+        subrogante_activo=subrogante_activo
     )
 
 @casos_bp.route('/ver/<int:id>', methods=['GET', 'POST'])
@@ -274,8 +325,16 @@ def ver_caso(id):
         permitido = True
         
     elif rol_nombre in ['Referente', 'Visualizador']:
-        # Permiso si es Referente/Visualizador Global (None) O del ciclo del caso
-        if current_user.ciclo_asignado_id is None or caso.ciclo_vital_id == current_user.ciclo_asignado_id:
+        # Acceso propio (global o su ciclo)
+        acceso_propio = (current_user.ciclo_asignado_id is None) or (caso.ciclo_vital_id == current_user.ciclo_asignado_id)
+
+        # Acceso por subrogancia (si estoy subrogando a un titular con ciclo)
+        acceso_subrogado = False
+        if current_user.subrogante_de and current_user.subrogante_de.ciclo_asignado_id:
+            if caso.ciclo_vital_id == current_user.subrogante_de.ciclo_asignado_id:
+                acceso_subrogado = True
+
+        if acceso_propio or acceso_subrogado:
             permitido = True
             
     elif rol_nombre == 'Funcionario':
@@ -296,8 +355,9 @@ def ver_caso(id):
         q_func = Usuario.query.join(Rol).filter(Rol.nombre == 'Funcionario').filter(Usuario.activo == True)
         
         # Si es Referente de ciclo específico, solo listar funcionarios de ESE ciclo
-        if rol_nombre == 'Referente' and current_user.ciclo_asignado_id:
-            q_func = q_func.filter(Usuario.ciclo_asignado_id == current_user.ciclo_asignado_id)
+        if rol_nombre == 'Referente':
+            # Mostrar funcionarios del ciclo del CASO (clave para subrogancia)
+            q_func = q_func.filter(Usuario.ciclo_asignado_id == caso.ciclo_vital_id)
             
         funcionarios_disponibles = q_func.all()
 
@@ -320,9 +380,9 @@ def ver_caso(id):
                         flash('El funcionario seleccionado no es válido o está inactivo.', 'danger')
                         return redirect(url_for('casos.ver_caso', id=caso.id))
 
-                    if rol_nombre == 'Referente' and current_user.ciclo_asignado_id:
-                        if funcionario_nuevo.ciclo_asignado_id != current_user.ciclo_asignado_id:
-                            flash('No puedes asignar a un funcionario de otro ciclo.', 'danger')
+                    if rol_nombre == 'Referente':
+                        if funcionario_nuevo.ciclo_asignado_id != caso.ciclo_vital_id:
+                            flash('El funcionario debe pertenecer al mismo ciclo vital del caso.', 'danger')
                             return redirect(url_for('casos.ver_caso', id=caso.id))
                     
                     # Datos previos para auditoría
@@ -750,8 +810,14 @@ def descargar_acta(id):
         permitido = True
         
     elif rol_nombre in ['Referente', 'Visualizador']:
-        # Permiso si es Global o del ciclo del caso
-        if current_user.ciclo_asignado_id is None or caso.ciclo_vital_id == current_user.ciclo_asignado_id:
+        acceso_propio = (current_user.ciclo_asignado_id is None) or (caso.ciclo_vital_id == current_user.ciclo_asignado_id)
+
+        acceso_subrogado = False
+        if current_user.subrogante_de and current_user.subrogante_de.ciclo_asignado_id:
+            if caso.ciclo_vital_id == current_user.subrogante_de.ciclo_asignado_id:
+                acceso_subrogado = True
+
+        if acceso_propio or acceso_subrogado:
             permitido = True
             
     elif rol_nombre == 'Funcionario':
@@ -844,8 +910,21 @@ def exportar_excel():
     if rol_nombre == 'Admin':
         pass
     elif rol_nombre in ['Referente', 'Visualizador']:
+        ciclos_permitidos = []
+
         if current_user.ciclo_asignado_id:
-            filters.append(Caso.ciclo_vital_id == current_user.ciclo_asignado_id)
+            ciclos_permitidos.append(current_user.ciclo_asignado_id)
+
+        if current_user.subrogante_de and current_user.subrogante_de.ciclo_asignado_id:
+            ciclo_sub = current_user.subrogante_de.ciclo_asignado_id
+            if ciclo_sub not in ciclos_permitidos:
+                ciclos_permitidos.append(ciclo_sub)
+
+        if ciclos_permitidos:
+            filters.append(Caso.ciclo_vital_id.in_(ciclos_permitidos))
+        else:
+            # sin ciclo = global (no filtra)
+            pass
     elif rol_nombre == 'Funcionario':
         filters.append(Caso.asignado_a_usuario_id == current_user.id)
     else:
@@ -1050,3 +1129,94 @@ def enviar_reporte_masivo():
         flash(f"Error interno: {str(e)}", "danger")
 
     return redirect(url_for('casos.index'))
+
+@casos_bp.route('/subrogancia/gestionar', methods=['POST'])
+@login_required
+def gestionar_subrogancia():
+    """
+    Activa o desactiva subrogancia para el usuario actual (Titular Referente).
+    - Activar: el subrogante apunta al titular: subrogante.subrogante_de_usuario_id = current_user.id
+    - Desactivar: rompe vínculo del subrogante activo (si existe)
+    """
+    if current_user.rol.nombre != 'Referente':
+        flash("Solo los Referentes pueden gestionar subrogancias.", "danger")
+        return redirect(url_for('casos.index'))
+
+    accion = (request.form.get('accion') or '').strip()
+
+    try:
+        # Helper: obtener subrogante activo (compatible con lazy='dynamic' y con listas)
+        def get_subrogante_activo():
+            rel = getattr(current_user, "subrogantes_activos", None)
+            if not rel:
+                return None
+            try:
+                # Si es AppenderQuery (dynamic)
+                return rel.first()
+            except Exception:
+                # Si es lista normal
+                return rel[0] if rel else None
+
+        if accion == 'desactivar':
+            subrogante_actual = get_subrogante_activo()
+
+            if not subrogante_actual:
+                flash("No tienes subrogancia activa para desactivar.", "warning")
+                return redirect(url_for('casos.index'))
+
+            subrogante_actual.subrogante_de_usuario_id = None
+            db.session.commit()
+
+            # Correo best-effort
+            try:
+                enviar_aviso_subrogancia(current_user, subrogante_actual, es_activacion=False)
+            except Exception as e_mail:
+                print(f"Error email subrogancia (desactivar): {e_mail}")
+
+            registrar_log("Subrogancia", f"{current_user.email} desactivó subrogancia de {subrogante_actual.email}")
+            flash(f"Subrogancia finalizada. {subrogante_actual.nombre_completo} ya no tiene acceso a tu ciclo.", "info")
+            return redirect(url_for('casos.index'))
+
+        if accion == 'activar':
+            subrogante_id = safe_int(request.form.get('subrogante_id'))
+            if not subrogante_id:
+                flash("Debes seleccionar un subrogante.", "warning")
+                return redirect(url_for('casos.index'))
+
+            if subrogante_id == current_user.id:
+                flash("No puedes autodesignarte como subrogante.", "danger")
+                return redirect(url_for('casos.index'))
+
+            subrogante_nuevo = Usuario.query.get(subrogante_id)
+            if (not subrogante_nuevo) or (not subrogante_nuevo.activo) or (subrogante_nuevo.rol.nombre != 'Referente'):
+                flash("El usuario seleccionado no es válido o no es Referente.", "danger")
+                return redirect(url_for('casos.index'))
+
+            # Regla simple: 1 subrogancia activa por titular
+            # Si ya existe alguien subrogándome, lo cortamos primero
+            anterior = get_subrogante_activo()
+            if anterior:
+                anterior.subrogante_de_usuario_id = None
+
+            # Activar (el subrogante apunta al titular)
+            subrogante_nuevo.subrogante_de_usuario_id = current_user.id
+            db.session.commit()
+
+            # Correo best-effort
+            try:
+                enviar_aviso_subrogancia(current_user, subrogante_nuevo, es_activacion=True)
+            except Exception as e_mail:
+                print(f"Error email subrogancia (activar): {e_mail}")
+
+            registrar_log("Subrogancia", f"{current_user.email} activó subrogancia a {subrogante_nuevo.email}")
+            flash(f"Subrogancia activada. {subrogante_nuevo.nombre_completo} ahora tiene acceso a tu ciclo.", "success")
+            return redirect(url_for('casos.index'))
+
+        flash("Acción de subrogancia inválida.", "warning")
+        return redirect(url_for('casos.index'))
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error gestionar_subrogancia: {e}")
+        flash("Ocurrió un error al gestionar la subrogancia.", "danger")
+        return redirect(url_for('casos.index'))
