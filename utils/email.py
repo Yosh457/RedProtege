@@ -217,9 +217,9 @@ def enviar_aviso_nuevo_caso(caso, usuario_ingreso):
     html = get_email_template(f"Nuevo Caso Ingresado #{caso.folio_atencion}", contenido)
     enviar_correo_generico(destinatarios, f"Alerta: Nuevo Caso #{caso.folio_atencion}", html)
 
-def enviar_aviso_cierre(caso, funcionario_cierre, pdf_path=None):
+def enviar_aviso_cierre(caso, funcionario_cierre):
     """
-    Notifica cierre al referente y al funcionario. Adjunta PDF si existe.
+    Notifica cierre al referente y al funcionario
     """
     from models import Usuario, Rol
     
@@ -248,7 +248,7 @@ def enviar_aviso_cierre(caso, funcionario_cierre, pdf_path=None):
             <p style="margin: 5px 0;"><strong>Fecha Cierre:</strong> {caso.fecha_cierre.strftime('%d/%m/%Y %H:%M')}</p>
         </div>
         
-        <p>Se adjunta el Acta de Cierre en formato PDF con el detalle de la gestión.</p>
+        <p>El Acta de Cierre está disponible para su descarga dentro del sistema.</p>
 
         <div style="text-align: center; margin: 30px 0;">
             <a href="{url}" style="background-color: #275c80; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold;">
@@ -257,7 +257,7 @@ def enviar_aviso_cierre(caso, funcionario_cierre, pdf_path=None):
         </div>
     """
     html = get_email_template(f"Caso Cerrado #{caso.folio_atencion}", contenido)
-    return enviar_correo_generico(destinatarios, f"Caso Cerrado #{caso.folio_atencion}", html, adjunto_path=pdf_path)
+    return enviar_correo_generico(destinatarios, f"Caso Cerrado #{caso.folio_atencion}", html)
 
 def enviar_credenciales_nuevo_usuario(usuario, password_texto_plano):
     """

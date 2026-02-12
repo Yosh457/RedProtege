@@ -776,7 +776,7 @@ def cerrar_caso(id):
 
         # 5. Enviar Correo con Adjunto (Best Effort)
         try:
-            enviar_aviso_cierre(caso, current_user, output_path_abs)
+            enviar_aviso_cierre(caso, current_user)
             flash('Caso cerrado exitosamente. Acta generada y notificaciones enviadas.', 'success')
         except Exception as e_mail:
             print(f"Error enviando correo cierre: {e_mail}")
