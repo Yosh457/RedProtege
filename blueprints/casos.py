@@ -1074,14 +1074,17 @@ def enviar_reporte_masivo():
     """
     Calcula estadísticas globales y las envía por correo a todos los usuarios activos.
     Solo para Admin y Referentes.
+    Incluye tablas:
+    - Resumen por Recinto (Inscritos) con estados
+    - Resumen de Notificaciones (Origen) con % del total
     """
-    # 1. Validar Permiso
+    # 1) Validar permiso
     if current_user.rol.nombre not in ['Admin', 'Referente']:
         flash("No tiene permisos para realizar esta acción.", "danger")
         return redirect(url_for('casos.index'))
 
     try:
-        # 2. Calcular Estadísticas Globales (Snapshot)
+        # 2) Calcular estadísticas globales (snapshot)
         stats_query = db.session.query(
             func.count(Caso.id).label('total'),
             func.sum(case((Caso.estado == 'PENDIENTE_RESCATAR', 1), else_=0)).label('pendientes'),
@@ -1093,7 +1096,7 @@ def enviar_reporte_masivo():
         if not r:
             flash("No fue posible calcular estadísticas del sistema.", "danger")
             return redirect(url_for('casos.index'))
-        
+
         stats = {
             'total': int(r.total or 0),
             'pendientes': int(r.pendientes or 0),
@@ -1102,8 +1105,12 @@ def enviar_reporte_masivo():
         }
 
         # 3) Obtener destinatarios (usuarios activos con email válido)
-        usuarios_activos = Usuario.query.filter(Usuario.activo == True, Usuario.email.isnot(None), Usuario.email != '').all()
-        
+        usuarios_activos = Usuario.query.filter(
+            Usuario.activo == True,
+            Usuario.email.isnot(None),
+            Usuario.email != ''
+        ).all()
+
         # Limpieza + deduplicación
         destinatarios_bcc = []
         vistos = set()
@@ -1117,8 +1124,64 @@ def enviar_reporte_masivo():
             flash("No se encontraron usuarios activos con correo para enviar el reporte.", "warning")
             return redirect(url_for('casos.index'))
 
-        # 4. Enviar Correo Masivo
-        if enviar_reporte_estadistico_masivo(destinatarios_bcc, stats):
+        # =========================================================
+        # 4) NUEVO: Resumen por Recinto (Inscritos) con estados
+        # Incluye "No Registrado" si recinto_inscrito_id es NULL
+        # =========================================================
+        q_inscritos = db.session.query(
+            func.coalesce(CatalogoEstablecimiento.nombre, 'No Registrado').label('nombre'),
+            func.count(Caso.id).label('total'),
+            func.sum(case((Caso.estado == 'PENDIENTE_RESCATAR', 1), else_=0)).label('pendientes'),
+            func.sum(case((Caso.estado == 'EN_SEGUIMIENTO', 1), else_=0)).label('seguimiento'),
+            func.sum(case((Caso.estado == 'CERRADO', 1), else_=0)).label('cerrados')
+        ).outerjoin(Caso.recinto_inscrito) \
+         .group_by(func.coalesce(CatalogoEstablecimiento.nombre, 'No Registrado')) \
+         .order_by(func.count(Caso.id).desc()) \
+         .all()
+
+        stats_inscritos = []
+        for row in q_inscritos:
+            stats_inscritos.append({
+                'nombre': row.nombre,
+                'total': int(row.total or 0),
+                'pendientes': int(row.pendientes or 0),
+                'seguimiento': int(row.seguimiento or 0),
+                'cerrados': int(row.cerrados or 0)
+            })
+
+        # =========================================================
+        # 5) NUEVO: Resumen de Notificaciones (Origen) + porcentaje
+        # Incluye "No especificado" si recinto_notifica_id es NULL
+        # =========================================================
+        q_notif = db.session.query(
+            func.coalesce(CatalogoRecinto.nombre, 'No especificado').label('nombre'),
+            func.count(Caso.id).label('total')
+        ).outerjoin(Caso.recinto_notifica) \
+         .group_by(func.coalesce(CatalogoRecinto.nombre, 'No especificado')) \
+         .order_by(func.count(Caso.id).desc()) \
+         .all()
+
+        total_notif_global = sum(int(row.total or 0) for row in q_notif) or 0
+
+        stats_notificacion = []
+        for row in q_notif:
+            total_row = int(row.total or 0)
+            pct = round((total_row / total_notif_global * 100), 1) if total_notif_global > 0 else 0
+            stats_notificacion.append({
+                'nombre': row.nombre,
+                'total': total_row,
+                'pct': pct
+            })
+
+        # 6) Empaquetar todo para email.py (nueva firma)
+        data_completa = {
+            'global': stats,
+            'inscritos': stats_inscritos,
+            'notificacion': stats_notificacion
+        }
+
+        # 7) Enviar correo masivo
+        if enviar_reporte_estadistico_masivo(destinatarios_bcc, data_completa):
             registrar_log("Reporte Masivo", f"Enviado por {current_user.email} a {len(destinatarios_bcc)} destinatarios.")
             flash(f"Reporte enviado exitosamente a {len(destinatarios_bcc)} usuarios.", "success")
         else:

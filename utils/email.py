@@ -286,7 +286,7 @@ def enviar_credenciales_nuevo_usuario(usuario, password_texto_plano):
     html = get_email_template("Bienvenido a RedProtege", contenido)
     return enviar_correo_generico(usuario.email, "Bienvenido - Credenciales de Acceso", html)
 
-def enviar_reporte_estadistico_masivo(destinatarios_bcc, stats):
+def enviar_reporte_estadistico_masivo(destinatarios_bcc, data):
     """
     Genera el reporte HTML y lo envía de forma masiva y PRIVADA:
 
@@ -295,14 +295,21 @@ def enviar_reporte_estadistico_masivo(destinatarios_bcc, stats):
       para no depender del header Bcc.
 
     'destinatarios_bcc' debe ser lista de emails (o string, pero ideal lista).
-    'stats' debe traer: total, pendientes, seguimiento, cerrados.
+    'data' debe traer:
+      - data['global'] = {total, pendientes, seguimiento, cerrados}
+      - data['inscritos'] = [{nombre,total,pendientes,seguimiento,cerrados}, ...]
+      - data['notificacion'] = [{nombre,total,pct}, ...]
     """
     remitente = os.getenv("EMAIL_USUARIO")
     if not remitente:
         print("ERROR: EMAIL_USUARIO no está configurado en .env")
         return False
 
-    # Fecha en español sin depender del locale del sistema
+    stats = data.get('global', {}) or {}
+    inscritos = data.get('inscritos', []) or []
+    notificacion = data.get('notificacion', []) or []
+
+    # Fecha en español sin locale del sistema
     meses = {
         1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
         7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
@@ -314,7 +321,6 @@ def enviar_reporte_estadistico_masivo(destinatarios_bcc, stats):
     # Helper % seguro
     def pct(val, total):
         return round((val / total * 100), 1) if total and total > 0 else 0
-
     # Datos
     total = int(stats.get("total", 0) or 0)
     pendientes = int(stats.get("pendientes", 0) or 0)
@@ -325,7 +331,43 @@ def enviar_reporte_estadistico_masivo(destinatarios_bcc, stats):
     pct_s = pct(seguimiento, total)
     pct_c = pct(cerrados, total)
 
-    # IMPORTANTE: en email, preferir tablas (Outlook-friendly)
+    # -------------------------
+    # Construcción tabla inscritos
+    # -------------------------
+    rows_inscritos = ""
+    for item in inscritos:
+        rows_inscritos += f"""
+        <tr>
+            <td style="padding:10px; border-bottom:1px solid #E5E7EB; color:#374151;">{item.get('nombre','')}</td>
+            <td style="padding:10px; border-bottom:1px solid #E5E7EB; text-align:center; font-weight:700;">{int(item.get('total',0) or 0)}</td>
+            <td style="padding:10px; border-bottom:1px solid #E5E7EB; text-align:center; color:#D97706; font-weight:700;">{int(item.get('pendientes',0) or 0)}</td>
+            <td style="padding:10px; border-bottom:1px solid #E5E7EB; text-align:center; color:#2563EB; font-weight:700;">{int(item.get('seguimiento',0) or 0)}</td>
+            <td style="padding:10px; border-bottom:1px solid #E5E7EB; text-align:center; color:#059669; font-weight:700;">{int(item.get('cerrados',0) or 0)}</td>
+        </tr>
+        """
+
+    # -------------------------
+    # Construcción tabla notificación
+    # -------------------------
+    rows_notif = ""
+    total_notif = sum(int(x.get('total', 0) or 0) for x in notificacion) or 0
+    for item in notificacion:
+        rows_notif += f"""
+        <tr>
+            <td style="padding:10px; border-bottom:1px solid #E5E7EB; color:#374151;">{item.get('nombre','')}</td>
+            <td style="padding:10px; border-bottom:1px solid #E5E7EB; text-align:right; font-weight:700;">{int(item.get('total',0) or 0)}</td>
+            <td style="padding:10px; border-bottom:1px solid #E5E7EB; text-align:right; color:#6B7280;">{float(item.get('pct',0) or 0)}%</td>
+        </tr>
+        """
+
+    rows_notif += f"""
+        <tr style="background-color:#F9FAFB; font-weight:800;">
+            <td style="padding:10px; text-align:right; color:#111827;">Total Notificaciones Registradas</td>
+            <td style="padding:10px; text-align:right; color:#111827;">{total_notif}</td>
+            <td style="padding:10px; text-align:right; color:#111827;">100%</td>
+        </tr>
+    """
+
     contenido = f"""
     <div style="font-family: 'Segoe UI', Helvetica, Arial, sans-serif; color:#111827; line-height:1.6;">
 
@@ -374,7 +416,7 @@ def enviar_reporte_estadistico_masivo(destinatarios_bcc, stats):
             🕒 Distribución de Casos
         </h3>
 
-        <!-- Item: Pendiente -->
+        <!-- Pendiente -->
         <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 14px;">
             <tr>
                 <td style="padding:0 0 6px;">
@@ -395,7 +437,7 @@ def enviar_reporte_estadistico_masivo(destinatarios_bcc, stats):
             </tr>
         </table>
 
-        <!-- Item: Seguimiento -->
+        <!-- Seguimiento -->
         <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 14px;">
             <tr>
                 <td style="padding:0 0 6px;">
@@ -416,7 +458,7 @@ def enviar_reporte_estadistico_masivo(destinatarios_bcc, stats):
             </tr>
         </table>
 
-        <!-- Item: Cerrados -->
+        <!-- Cerrados -->
         <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 22px;">
             <tr>
                 <td style="padding:0 0 6px;">
@@ -437,31 +479,40 @@ def enviar_reporte_estadistico_masivo(destinatarios_bcc, stats):
             </tr>
         </table>
 
-        <!-- Barra proporcional -->
-        <div style="border-top:1px solid #E5E7EB; padding-top:16px; margin-top:10px;">
-            <div style="font-size:11px; color:#9CA3AF; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">
-                Visualización proporcional
-            </div>
-            <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:8px; overflow:hidden;">
-                <tr>
-                    <td style="height:12px; background:#F59E0B; width:{pct_p}%;"></td>
-                    <td style="height:12px; background:#3B82F6; width:{pct_s}%;"></td>
-                    <td style="height:12px; background:#10B981; width:{pct_c}%;"></td>
-                </tr>
-            </table>
-            <div style="margin-top:8px; font-size:11px; color:#6B7280;">
-                Pendiente • Seguimiento • Cerrado
-            </div>
-        </div>
+        <!-- TABLA INSCRITOS -->
+        <h3 style="margin:0 0 12px; font-size:16px; border-bottom:2px solid #E5E7EB; padding-bottom:8px; text-align:center;">
+            Resumen por Recinto (Inscritos)
+        </h3>
+
+        <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #E5E7EB; border-radius:10px; overflow:hidden; font-size:12px; margin-bottom:22px;">
+            <tr style="background:#EFF6FF; color:#1D4ED8;">
+                <th style="padding:10px; text-align:left;">Recinto</th>
+                <th style="padding:10px; text-align:center;">Total Casos</th>
+                <th style="padding:10px; text-align:center;">Pendientes</th>
+                <th style="padding:10px; text-align:center;">En Seguimiento</th>
+                <th style="padding:10px; text-align:center;">Cerrados</th>
+            </tr>
+            {rows_inscritos}
+        </table>
+
+        <!-- TABLA NOTIFICACIÓN -->
+        <h3 style="margin:0 0 12px; font-size:16px; border-bottom:2px solid #E5E7EB; padding-bottom:8px; text-align:center;">
+            Resumen de Notificaciones (Origen)
+        </h3>
+
+        <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #E5E7EB; border-radius:10px; overflow:hidden; font-size:12px; margin-bottom:22px;">
+            <tr style="background:#EFF6FF; color:#1D4ED8;">
+                <th style="padding:10px; text-align:left;">Origen de Notificación</th>
+                <th style="padding:10px; text-align:right;">Total Notificaciones</th>
+                <th style="padding:10px; text-align:right;">Porcentaje</th>
+            </tr>
+            {rows_notif}
+        </table>
 
         <!-- CTA -->
-        <div style="text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #E5E7EB;">
-            <h4 style="margin: 0 0 10px; color: #111827; font-size: 15px;">Accede a los detalles completos</h4>
-            <p style="margin: 0 0 20px; font-size: 13px; color: #6B7280;">
-                Para revisar el detalle de cada caso y gestionar las tareas pendientes, ingresa directamente al panel de control.
-            </p>
-            <a href="{url_for('auth.login', _external=True)}" 
-                style="display: inline-block; background-color: #275C80; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <div style="text-align: center; margin-top: 26px; padding-top: 18px; border-top: 1px solid #E5E7EB;">
+            <a href="{url_for('auth.login', _external=True)}"
+               style="display: inline-block; background-color: #275C80; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 600;">
                 Ir al Dashboard →
             </a>
         </div>
