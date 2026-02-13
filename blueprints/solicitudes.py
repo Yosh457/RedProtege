@@ -186,6 +186,61 @@ def formulario():
                 
                 denuncia_prof_nombre = clean(f.get('denuncia_nombre'))
                 denuncia_prof_cargo = clean(f.get('denuncia_cargo'))
+            
+            # --- NUEVA LÓGICA: ACOMPAÑANTE DINÁMICO ---
+            acompanante_presente = (f.get('acompanante_presente') == '1')
+
+            # Si NO viene acompañado, forzamos todos los campos del acompañante a None (NULL en DB)
+            if not acompanante_presente:
+                acomp_nombre = None
+                acomp_parentesco = None
+                acomp_telefono = None
+                acomp_tel_tipo = None
+                acomp_doc_tipo = None
+                acomp_doc_num = None
+                acomp_doc_otro_desc = None
+                a_calle = None
+                a_num = None
+                a_dom = None
+            else:
+                # Si viene acompañado:
+                # - Nombre y parentesco ya NO son obligatorios
+                # - Teléfono SÍ es obligatorio
+                acomp_nombre = clean(f.get('acomp_nombre'))
+                acomp_parentesco = clean(f.get('acomp_parentesco'))
+
+                acomp_telefono = clean(f.get('acomp_telefono'))
+                if not acomp_telefono:
+                    errores.append(
+                        "Si el paciente viene acompañado, el teléfono del acompañante es obligatorio."
+                    )
+
+                acomp_tel_tipo = clean(f.get('acomp_tel_tipo'))
+
+                # Documento acompañante (ya normalizado arriba: acomp_doc_tipo / acomp_doc_num)
+                acomp_doc_otro_desc = (
+                    clean(f.get('acomp_doc_otro_desc'))
+                    if acomp_doc_tipo == 'OTRO'
+                    else None
+                )
+
+                # Dirección acompañante
+                a_calle = clean(f.get('acomp_calle'))
+                a_num = clean(f.get('acomp_numero'))
+                a_dom = f"{a_calle} #{a_num}".strip(" #") if (a_calle or a_num) else None
+
+            # Si hubo error por teléfono obligatorio
+            if errores:
+                for e in errores:
+                    flash(e, 'danger')
+                return render_template(
+                    'solicitudes/formulario.html',
+                    recintos=recintos,
+                    vulneraciones=vulneraciones,
+                    ciclos=ciclos,
+                    instituciones=instituciones,
+                    datos=f
+                )
 
             # 6. Preparar Fechas
             fecha_atencion_dt = datetime.strptime(f.get('fecha_atencion'), '%Y-%m-%d').date()
@@ -200,11 +255,6 @@ def formulario():
             p_calle = clean(f.get('paciente_calle'))
             p_num = clean(f.get('paciente_numero'))
             p_dom = f"{p_calle} #{p_num}".strip(" #") if (p_calle or p_num) else None
-
-            # Acompañante
-            a_calle = clean(f.get('acomp_calle'))
-            a_num = clean(f.get('acomp_numero'))
-            a_dom = f"{a_calle} #{a_num}".strip(" #") if (a_calle or a_num) else None
 
             # 8. Creación del Objeto Caso
             nuevo_caso = Caso(
@@ -237,14 +287,14 @@ def formulario():
                 paciente_direccion_numero=p_num,
                 paciente_domicilio=p_dom,
 
-                # Acompañante (clean para evitar "" => NULL)
-                acompanante_nombre=clean(f.get('acomp_nombre')),
-                acompanante_parentesco=clean(f.get('acomp_parentesco')),
-                acompanante_telefono=clean(f.get('acomp_telefono')),
-                acompanante_telefono_tipo=clean(f.get('acomp_tel_tipo')),
+                # Acompañante
+                acompanante_nombre=acomp_nombre,
+                acompanante_parentesco=acomp_parentesco,
+                acompanante_telefono=acomp_telefono,
+                acompanante_telefono_tipo=acomp_tel_tipo,
                 acompanante_doc_tipo=acomp_doc_tipo,
                 acompanante_doc_numero=acomp_doc_num,
-                acompanante_doc_otro_descripcion=clean(f.get('acomp_doc_otro_desc')) if acomp_doc_tipo == 'OTRO' else None,
+                acompanante_doc_otro_descripcion=acomp_doc_otro_desc,
                 
                 acompanante_direccion_calle=a_calle,
                 acompanante_direccion_numero=a_num,

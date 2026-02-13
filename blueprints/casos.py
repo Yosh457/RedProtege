@@ -572,72 +572,105 @@ def gestionar_caso(id):
                     caso.denuncia_profesional_nombre = None
                     caso.denuncia_profesional_cargo = None
                 else:
-                    inst_id_int = safe_int(request.form.get('institucion_id'))
-                    caso.denuncia_institucion_id = inst_id_int
+                    # ✅ FIX BUG: no pisar con NULL si el <select> viene vacío ("Seleccione...")
+                    inst_id_raw = request.form.get('institucion_id')   # puede ser None, '' o '5'
+                    inst_id_int = safe_int(inst_id_raw)
 
+                    # Solo actualizamos si realmente seleccionó algo
+                    if inst_id_raw not in (None, ''):
+                        caso.denuncia_institucion_id = inst_id_int
+
+                    # "Otro" depende del valor FINAL que quedó guardado (no del raw)
                     caso.denuncia_institucion_otro = None
-                    if inst_id_int:
-                        inst_obj = CatalogoInstitucion.query.get(inst_id_int)
+                    inst_final = caso.denuncia_institucion_id
+                    if inst_final:
+                        inst_obj = CatalogoInstitucion.query.get(inst_final)
                         if inst_obj and 'otro' in inst_obj.nombre.lower():
                             caso.denuncia_institucion_otro = clean(request.form.get('institucion_otro'))
 
+                    # Profesional (solo actualiza si viene algo en el POST)
                     nombre_prof = clean(request.form.get('denuncia_nombre'))
                     cargo_prof = clean(request.form.get('denuncia_cargo'))
                     if nombre_prof is not None:
                         caso.denuncia_profesional_nombre = nombre_prof
                     if cargo_prof is not None:
                         caso.denuncia_profesional_cargo = cargo_prof
+            
+            # A4) ACOMPAÑANTE (Dinámico: ¿viene acompañado?)
+            # Si viene el radio en el POST, actualizamos el flag siempre.
+            # (Si no viene, no tocamos el valor anterior.)
+            if request.form.get('acompanante_presente') is not None:
+                acompanante_presente = (request.form.get('acompanante_presente') == '1')
+                caso.acompanante_presente = acompanante_presente
 
-            # A4) Completar / Actualizar ACOMPAÑANTE (permite completar datos faltantes)
-            # Nota: Solo rellenamos si viene dato. No sobreescribimos con vacío.
-            acomp_nombre = clean(request.form.get('acomp_nombre'))
-            acomp_parentesco = clean(request.form.get('acomp_parentesco'))
-            acomp_tel = clean(request.form.get('acomp_telefono'))
-            acomp_tel_tipo = request.form.get('acomp_tel_tipo')
+                # Si NO viene acompañado: limpiamos todo
+                if not acompanante_presente:
+                    caso.acompanante_nombre = None
+                    caso.acompanante_parentesco = None
+                    caso.acompanante_telefono = None
+                    caso.acompanante_telefono_tipo = None
+                    caso.acompanante_doc_tipo = None
+                    caso.acompanante_doc_numero = None
+                    caso.acompanante_doc_otro_descripcion = None
+                    caso.acompanante_direccion_calle = None
+                    caso.acompanante_direccion_numero = None
+                    caso.acompanante_domicilio = None
 
-            if acomp_nombre is not None:
-                caso.acompanante_nombre = acomp_nombre
-            if acomp_parentesco is not None:
-                caso.acompanante_parentesco = acomp_parentesco
-            if acomp_tel is not None:
-                caso.acompanante_telefono = acomp_tel
-            if acomp_tel_tipo:
-                caso.acompanante_telefono_tipo = acomp_tel_tipo
+            # Si viene acompañado, procesamos datos
+            if caso.acompanante_presente:
+                acomp_nombre = clean(request.form.get('acomp_nombre'))
+                acomp_parentesco = clean(request.form.get('acomp_parentesco'))
+                acomp_tel = clean(request.form.get('acomp_telefono'))
+                acomp_tel_tipo = request.form.get('acomp_tel_tipo')
 
-            acomp_doc_tipo = request.form.get('acomp_doc_tipo')
-            if acomp_doc_tipo:
-                caso.acompanante_doc_tipo = acomp_doc_tipo
+                # Teléfono obligatorio si viene acompañado y no existe aún
+                if not caso.acompanante_telefono and not acomp_tel:
+                    flash('Si el paciente viene acompañado, el teléfono del acompañante es obligatorio.', 'danger')
+                    return redirect(url_for('casos.gestionar_caso', id=caso.id))
 
-            acomp_doc_num_raw = request.form.get('acomp_doc_numero')
-            acomp_doc_num_clean = clean(acomp_doc_num_raw)
-            if acomp_doc_num_clean:
-                if acomp_doc_tipo == 'RUT':
-                    rut_acomp_norm = clean_rut(acomp_doc_num_clean)
-                    if rut_excede_largo(rut_acomp_norm):
-                        flash('El RUT del acompañante es demasiado largo.', 'danger')
-                        return redirect(url_for('casos.gestionar_caso', id=caso.id))
-                    if not es_rut_valido(rut_acomp_norm):
-                        flash('El RUT del acompañante no es válido.', 'danger')
-                        return redirect(url_for('casos.gestionar_caso', id=caso.id))
-                    caso.acompanante_doc_numero = rut_acomp_norm
-                else:
-                    caso.acompanante_doc_numero = acomp_doc_num_clean
+                if acomp_nombre is not None:
+                    caso.acompanante_nombre = acomp_nombre
+                if acomp_parentesco is not None:
+                    caso.acompanante_parentesco = acomp_parentesco
+                if acomp_tel is not None:
+                    caso.acompanante_telefono = acomp_tel
+                if acomp_tel_tipo:
+                    caso.acompanante_telefono_tipo = acomp_tel_tipo
 
-            if acomp_doc_tipo == 'OTRO':
-                acomp_otro_desc = clean(request.form.get('acomp_doc_otro_desc'))
-                if acomp_otro_desc:
-                    caso.acompanante_doc_otro_descripcion = acomp_otro_desc
+                acomp_doc_tipo = request.form.get('acomp_doc_tipo')
+                if acomp_doc_tipo:
+                    caso.acompanante_doc_tipo = acomp_doc_tipo
 
-            a_calle_new = clean(request.form.get('acomp_calle'))
-            a_num_new = clean(request.form.get('acomp_numero'))
-            if a_calle_new is not None:
-                caso.acompanante_direccion_calle = a_calle_new
-            if a_num_new is not None:
-                caso.acompanante_direccion_numero = a_num_new
+                acomp_doc_num_raw = request.form.get('acomp_doc_numero')
+                acomp_doc_num_clean = clean(acomp_doc_num_raw)
+                if acomp_doc_num_clean:
+                    if acomp_doc_tipo == 'RUT':
+                        rut_acomp_norm = clean_rut(acomp_doc_num_clean)
+                        if rut_excede_largo(rut_acomp_norm):
+                            flash('El RUT del acompañante es demasiado largo.', 'danger')
+                            return redirect(url_for('casos.gestionar_caso', id=caso.id))
+                        if not es_rut_valido(rut_acomp_norm):
+                            flash('El RUT del acompañante no es válido.', 'danger')
+                            return redirect(url_for('casos.gestionar_caso', id=caso.id))
+                        caso.acompanante_doc_numero = rut_acomp_norm
+                    else:
+                        caso.acompanante_doc_numero = acomp_doc_num_clean
 
-            a_calle = caso.acompanante_direccion_calle
-            a_num = caso.acompanante_direccion_numero
-            caso.acompanante_domicilio = f"{a_calle} #{a_num}".strip(" #") if (a_calle or a_num) else None
+                if acomp_doc_tipo == 'OTRO':
+                    acomp_otro_desc = clean(request.form.get('acomp_doc_otro_desc'))
+                    if acomp_otro_desc:
+                        caso.acompanante_doc_otro_descripcion = acomp_otro_desc
+
+                a_calle_new = clean(request.form.get('acomp_calle'))
+                a_num_new = clean(request.form.get('acomp_numero'))
+                if a_calle_new is not None:
+                    caso.acompanante_direccion_calle = a_calle_new
+                if a_num_new is not None:
+                    caso.acompanante_direccion_numero = a_num_new
+
+                a_calle = caso.acompanante_direccion_calle
+                a_num = caso.acompanante_direccion_numero
+                caso.acompanante_domicilio = f"{a_calle} #{a_num}".strip(" #") if (a_calle or a_num) else None
 
             # B) Datos Clínicos (CORRECCIÓN SAFE INT + OTRO)
             recinto_inscrito_id_raw = request.form.get('recinto_inscrito_id')

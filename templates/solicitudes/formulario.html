@@ -106,7 +106,7 @@
                         <p class="text-xs text-red-500 mt-1 hidden" id="error_rut_paciente">RUT Inválido</p>
                     </div>
                     <div id="div_paciente_otro_doc" class="hidden">
-                        <label class="block text-sm font-medium text-gray-700">Especifique Documento+</label>
+                        <label class="block text-sm font-medium text-gray-700">Especifique Documento</label>
                         <input type="text" name="paciente_doc_otro_desc" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
                     </div>
                 </div>
@@ -163,66 +163,102 @@
 
             <div class="bg-white shadow rounded-lg p-6 border-l-4 border-yellow-500">
                 <h2 class="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-                    <span class="bg-yellow-100 text-yellow-600 rounded-full w-8 h-8 flex items-center justify-center text-sm">C</span>
+                    <span
+                        class="bg-yellow-100 text-yellow-600 rounded-full w-8 h-8 flex items-center justify-center text-sm">C</span>
                     Datos del Acompañante
                 </h2>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Nombre Completo *</label>
-                        <input type="text" name="acomp_nombre" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Parentesco *</label>
-                        <input type="text" name="acomp_parentesco" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Teléfono *</label>
-                        <div class="flex">
-                            <input type="text" name="acomp_telefono" placeholder="912345678" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required>
+                <!-- Pregunta -->
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        ¿El paciente viene acompañado?
+                    </label>
+                    <div class="flex items-center gap-6">
+                        <div class="flex items-center">
+                            <input id="acomp_si" name="acompanante_presente" type="radio" value="1"
+                                class="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
+                                onchange="toggleAcompanante(true)">
+                            <label for="acomp_si" class="ml-3 block text-sm font-medium text-gray-700">Sí</label>
+                        </div>
+                        <div class="flex items-center">
+                            <input id="acomp_no" name="acompanante_presente" type="radio" value="0" checked
+                                class="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
+                                onchange="toggleAcompanante(false)">
+                            <label for="acomp_no" class="ml-3 block text-sm font-medium text-gray-700">No</label>
                         </div>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Tipo Teléfono</label>
-                        <select name="acomp_tel_tipo" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-white">
-                            <option value="CELULAR">Celular</option>
-                            <option value="FIJO">Fijo</option>
-                            <option value="OTRO">Otro</option>
-                        </select>
-                    </div>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Tipo Documento</label>
-                        <select name="acomp_doc_tipo" id="acomp_doc_tipo" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-white" onchange="toggleDocInput('acomp')">
-                            <option value="RUT">RUT</option>
-                            <option value="DNI">DNI</option>
-                            <option value="NIP">NIP</option>
-                            <option value="OTRO">Otro</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Nº Documento</label>
-                        <input type="text" name="acomp_doc_numero" id="acomp_doc_numero" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
-                    </div>
-                    <div id="div_acomp_otro_doc" class="hidden">
-                         <label class="block text-sm font-medium text-gray-700">Especifique Documento</label>
-                         <input type="text" name="acomp_doc_otro_desc" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
-                    </div>
-                </div>
+                <!-- Datos acompañante -->
+                <div id="div_datos_acomp" class="hidden border-t pt-4">
 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="md:col-span-2">
-                        <label class="block text-sm font-medium text-gray-700">Dirección Acompañante (Calle / Pasaje / Avenida)</label>
-                        <input type="text" name="acomp_calle" value="{{ datos.acomp_calle if datos else '' }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Nombre Completo</label>
+                            <input type="text" name="acomp_nombre"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Parentesco</label>
+                            <input type="text" name="acomp_parentesco"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Número</label>
-                        <input type="text" name="acomp_numero" value="{{ datos.acomp_numero if datos else '' }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Teléfono *</label>
+                            <input type="text" name="acomp_telefono" id="acomp_telefono" placeholder="912345678"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Tipo Teléfono</label>
+                            <select name="acomp_tel_tipo"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-white">
+                                <option value="CELULAR">Celular</option>
+                                <option value="FIJO">Fijo</option>
+                                <option value="OTRO">Otro</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Tipo Documento</label>
+                            <select name="acomp_doc_tipo" id="acomp_doc_tipo"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-white"
+                                onchange="toggleDocInput('acomp')">
+                                <option value="RUT">RUT</option>
+                                <option value="DNI">DNI</option>
+                                <option value="NIP">NIP</option>
+                                <option value="OTRO">Otro</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Nº Documento</label>
+                            <input type="text" name="acomp_doc_numero" id="acomp_doc_numero"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                        </div>
+                        <div id="div_acomp_otro_doc" class="hidden">
+                            <label class="block text-sm font-medium text-gray-700">Especifique Documento</label>
+                            <input type="text" name="acomp_doc_otro_desc"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="md:col-span-2">
+                            <label class="block text-sm font-medium text-gray-700">
+                                Dirección Acompañante
+                            </label>
+                            <input type="text" name="acomp_calle"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Número</label>
+                            <input type="text" name="acomp_numero"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                        </div>
                     </div>
                 </div>
             </div>
@@ -410,6 +446,46 @@
 
             const inputOtro = document.querySelector('input[name="institucion_otro"]');
             if (inputOtro) inputOtro.value = "";
+        }
+    }
+
+    // 6. Toggle Acompañante
+    function toggleAcompanante(mostrar) {
+        const div = document.getElementById('div_datos_acomp');
+        const tel = document.getElementById('acomp_telefono');
+
+        if (!div) return;
+
+        if (mostrar) {
+            div.classList.remove('hidden');
+            if (tel) tel.setAttribute('required', 'required');
+        } else {
+            div.classList.add('hidden');
+            if (tel) {
+                tel.removeAttribute('required');
+                tel.value = "";
+            }
+            // limpiar campos acompañante (opcional pero recomendado)
+            const campos = [
+                'acomp_nombre', 'acomp_parentesco', 'acomp_doc_numero',
+                'acomp_calle', 'acomp_numero'
+            ];
+            campos.forEach(name => {
+                const el = document.querySelector(`[name="${name}"]`);
+                if (el) el.value = "";
+            });
+
+            const selectTelTipo = document.querySelector(`[name="acomp_tel_tipo"]`);
+            if (selectTelTipo) selectTelTipo.value = "CELULAR";
+
+            const selectDocTipo = document.getElementById('acomp_doc_tipo');
+            if (selectDocTipo) selectDocTipo.value = "RUT";
+
+            const divOtroDoc = document.getElementById('div_acomp_otro_doc');
+            if (divOtroDoc) divOtroDoc.classList.add('hidden');
+
+            const inputOtroDoc = document.querySelector(`[name="acomp_doc_otro_desc"]`);
+            if (inputOtroDoc) inputOtroDoc.value = "";
         }
     }
 

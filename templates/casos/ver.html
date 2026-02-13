@@ -191,60 +191,71 @@
                 </div>
             </div>
 
-            {# --- ACOMPAÑANTE (COMPLETO) --- #}
+            {# --- ACOMPAÑANTE (DINÁMICO) --- #}
             <div class="bg-white p-6 rounded-xl shadow border-l-4 border-yellow-500">
                 <h3 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Datos del Acompañante (Inmutables)</h3>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                    <div>
-                        <span class="block text-gray-500 text-xs">Nombre</span>
+                <div class="text-sm">
+                    <p>
+                        <span class="text-gray-500 text-xs">¿El paciente viene acompañado?</span><br>
                         <span class="font-medium text-gray-900">
-                            {{ caso.acompanante_nombre if caso.acompanante_nombre else '-' }}
+                            {{ 'Sí' if caso.acompanante_presente else 'No' }}
                         </span>
-                    </div>
+                    </p>
 
-                    <div>
-                        <span class="block text-gray-500 text-xs">Parentesco</span>
-                        <span class="font-medium text-gray-900">
-                            {{ caso.acompanante_parentesco if caso.acompanante_parentesco else '-' }}
-                        </span>
-                    </div>
+                    {% if caso.acompanante_presente %}
+                        <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <span class="block text-gray-500 text-xs">Nombre</span>
+                                <span class="font-medium text-gray-900">
+                                    {{ caso.acompanante_nombre if caso.acompanante_nombre else '-' }}
+                                </span>
+                            </div>
 
-                    <div>
-                        <span class="block text-gray-500 text-xs">Teléfono</span>
-                        <span class="font-medium text-gray-900">
-                            {{ caso.acompanante_telefono if caso.acompanante_telefono else '-' }}
-                            {% if caso.acompanante_telefono_tipo %}
-                                <span class="text-gray-400 text-xs">({{ caso.acompanante_telefono_tipo }})</span>
-                            {% endif %}
-                        </span>
-                    </div>
+                            <div>
+                                <span class="block text-gray-500 text-xs">Parentesco</span>
+                                <span class="font-medium text-gray-900">
+                                    {{ caso.acompanante_parentesco if caso.acompanante_parentesco else '-' }}
+                                </span>
+                            </div>
 
-                    <div>
-                        <span class="block text-gray-500 text-xs">Identificación</span>
-                        <span class="font-medium text-gray-900">
-                            {% if caso.acompanante_doc_tipo and caso.acompanante_doc_numero %}
-                                {{ caso.acompanante_doc_tipo }}: {{ caso.acompanante_doc_numero }}
-                                {% if caso.acompanante_doc_tipo == 'OTRO' and caso.acompanante_doc_otro_descripcion %}
-                                    <span class="text-gray-500 text-xs">({{ caso.acompanante_doc_otro_descripcion }})</span>
-                                {% endif %}
-                            {% else %}
-                                <span class="text-gray-400 italic">No informada</span>
-                            {% endif %}
-                        </span>
-                    </div>
+                            <div>
+                                <span class="block text-gray-500 text-xs">Teléfono</span>
+                                <span class="font-medium text-gray-900">
+                                    {{ caso.acompanante_telefono if caso.acompanante_telefono else '-' }}
+                                    {% if caso.acompanante_telefono_tipo %}
+                                        <span class="text-gray-400 text-xs">({{ caso.acompanante_telefono_tipo }})</span>
+                                    {% endif %}
+                                </span>
+                            </div>
 
-                    <div class="md:col-span-2">
-                        <span class="block text-gray-500 text-xs">Domicilio</span>
-                        <span class="font-medium text-gray-900">
-                            {% if caso.acompanante_direccion_calle %}
-                                {{ caso.acompanante_direccion_calle }}
-                                {% if caso.acompanante_direccion_numero %} #{{ caso.acompanante_direccion_numero }}{% endif %}
-                            {% else %}
-                                {{ caso.acompanante_domicilio if caso.acompanante_domicilio else '-' }}
-                            {% endif %}
-                        </span>
-                    </div>
+                            <div>
+                                <span class="block text-gray-500 text-xs">Identificación</span>
+                                <span class="font-medium text-gray-900">
+                                    {% if caso.acompanante_doc_tipo and caso.acompanante_doc_numero %}
+                                        {{ caso.acompanante_doc_tipo }}: {{ caso.acompanante_doc_numero }}
+                                        {% if caso.acompanante_doc_tipo == 'OTRO' and caso.acompanante_doc_otro_descripcion %}
+                                            <span class="text-gray-500 text-xs">({{ caso.acompanante_doc_otro_descripcion }})</span>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="text-gray-400 italic">No informada</span>
+                                    {% endif %}
+                                </span>
+                            </div>
+
+                            <div class="md:col-span-2">
+                                <span class="block text-gray-500 text-xs">Domicilio</span>
+                                <span class="font-medium text-gray-900">
+                                    {% if caso.acompanante_direccion_calle %}
+                                        {{ caso.acompanante_direccion_calle }}
+                                        {% if caso.acompanante_direccion_numero %} #{{ caso.acompanante_direccion_numero }}{% endif %}
+                                    {% else %}
+                                        {{ caso.acompanante_domicilio if caso.acompanante_domicilio else '-' }}
+                                    {% endif %}
+                                </span>
+                            </div>
+                        </div>
+                    {% endif %}
                 </div>
             </div>
 
@@ -322,79 +333,79 @@
 
             {% if tiene_gestion %}
             <div class="bg-white p-6 rounded-xl shadow border-l-4 border-purple-600">
-              <h3 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Gestión Clínica Registrada</h3>
+                <h3 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Gestión Clínica Registrada</h3>
 
-              <div class="text-sm space-y-3">
-                {# Recinto + Texto Otro #}
-                {% if caso.recinto_inscrito %}
-                  <p>
-                    <span class="font-bold">Recinto Inscrito:</span>
-                    {{ caso.recinto_inscrito.nombre }}
-                    {% if caso.recinto_inscrito_otro_texto %}
-                      <span class="text-gray-600 italic">({{ caso.recinto_inscrito_otro_texto }})</span>
+                <div class="text-sm space-y-3">
+                    {# Recinto + Texto Otro #}
+                    {% if caso.recinto_inscrito %}
+                    <p>
+                        <span class="font-bold">Recinto Inscrito:</span>
+                        {{ caso.recinto_inscrito.nombre }}
+                        {% if caso.recinto_inscrito_otro_texto %}
+                        <span class="text-gray-600 italic">({{ caso.recinto_inscrito_otro_texto }})</span>
+                        {% endif %}
+                    </p>
+                    {% elif caso.recinto_inscrito_otro_texto %}
+                    <p>
+                        <span class="font-bold">Recinto Inscrito:</span>
+                        <span class="text-gray-600 italic">{{ caso.recinto_inscrito_otro_texto }}</span>
+                    </p>
                     {% endif %}
-                  </p>
-                {% elif caso.recinto_inscrito_otro_texto %}
-                  <p>
-                    <span class="font-bold">Recinto Inscrito:</span>
-                    <span class="text-gray-600 italic">{{ caso.recinto_inscrito_otro_texto }}</span>
-                  </p>
-                {% endif %}
 
-                <div class="flex flex-wrap gap-2">
-                  {% if caso.ingreso_lain %}
-                    <span class="inline-block bg-purple-100 text-purple-800 text-xs font-bold px-2 py-1 rounded">
-                      Ingreso LAIN
-                    </span>
-                  {% endif %}
+                    <div class="flex flex-wrap gap-2">
+                    {% if caso.ingreso_lain %}
+                        <span class="inline-block bg-purple-100 text-purple-800 text-xs font-bold px-2 py-1 rounded">
+                            Ingreso LAIN
+                        </span>
+                    {% endif %}
 
-                  {% if caso.fallecido %}
-                    <span class="inline-block bg-black text-white text-xs font-bold px-2 py-1 rounded">
-                      Fallecido{% if caso.fecha_defuncion %} ({{ caso.fecha_defuncion.strftime('%d-%m-%Y') }}){% endif %}
-                    </span>
-                  {% endif %}
-                </div>
+                    {% if caso.fallecido %}
+                        <span class="inline-block bg-black text-white text-xs font-bold px-2 py-1 rounded">
+                            Fallecido{% if caso.fecha_defuncion %} ({{ caso.fecha_defuncion.strftime('%d-%m-%Y') }}){% endif %}
+                        </span>
+                        {% endif %}
+                    </div>
 
-                {# Mostrar siempre los estados (aunque estén en pendiente) #}
-                {% if caso.control_sanitario %}
-                  <p><span class="font-bold">Controles:</span> {{ labels.get(caso.control_sanitario, caso.control_sanitario) }}</p>
-                {% endif %}
-                {% if caso.gestion_vacunas %}
-                  <p><span class="font-bold">Vacunas:</span> {{ labels.get(caso.gestion_vacunas, caso.gestion_vacunas) }}</p>
-                {% endif %}
-                {% if caso.gestion_judicial %}
-                  <p><span class="font-bold">Informe Judicial:</span> {{ labels.get(caso.gestion_judicial, caso.gestion_judicial) }}</p>
-                {% endif %}
-                {% if caso.gestion_salud_mental %}
-                  <p><span class="font-bold">Salud Mental:</span> {{ labels.get(caso.gestion_salud_mental, caso.gestion_salud_mental) }}</p>
-                {% endif %}
-                {% if caso.gestion_cosam %}
-                  <p><span class="font-bold">COSAM:</span> {{ labels.get(caso.gestion_cosam, caso.gestion_cosam) }}</p>
-                {% endif %}
+                    {# Mostrar siempre los estados (aunque estén en pendiente) #}
+                    {% if caso.control_sanitario %}
+                    <p><span class="font-bold">Controles:</span> {{ labels.get(caso.control_sanitario, caso.control_sanitario) }}</p>
+                    {% endif %}
+                    {% if caso.gestion_vacunas %}
+                    <p><span class="font-bold">Vacunas:</span> {{ labels.get(caso.gestion_vacunas, caso.gestion_vacunas) }}</p>
+                    {% endif %}
+                    {% if caso.gestion_judicial %}
+                    <p><span class="font-bold">Informe Judicial:</span> {{ labels.get(caso.gestion_judicial, caso.gestion_judicial) }}</p>
+                    {% endif %}
+                    {% if caso.gestion_salud_mental %}
+                    <p><span class="font-bold">Salud Mental:</span> {{ labels.get(caso.gestion_salud_mental, caso.gestion_salud_mental) }}</p>
+                    {% endif %}
+                    {% if caso.gestion_cosam %}
+                    <p><span class="font-bold">COSAM:</span> {{ labels.get(caso.gestion_cosam, caso.gestion_cosam) }}</p>
+                    {% endif %}
 
-                <div class="mt-6">
-                <h4 class="font-bold text-gray-800 mb-3">Historial de Observaciones y Derivaciones</h4>
-                <div class="bg-gray-50 rounded-lg p-4 border border-gray-200 max-h-60 overflow-y-auto">
-                    {% if caso.gestiones %}
-                        <div class="space-y-4">
-                            {% for gestion in caso.gestiones %}
-                            <div class="bg-white p-3 rounded shadow-sm border border-gray-100">
-                                <div class="flex justify-between items-center mb-1">
-                                    <span class="text-xs font-bold text-blue-600">{{ gestion.usuario.nombre_completo }}</span>
-                                    <span class="text-xs text-gray-400">{{ gestion.fecha_movimiento.strftime('%d/%m %H:%M') }}</span>
+                    <div class="mt-6">
+                        <h4 class="font-bold text-gray-800 mb-3">Historial de Observaciones y Derivaciones</h4>
+                        <div class="bg-gray-50 rounded-lg p-4 border border-gray-200 max-h-60 overflow-y-auto">
+                            {% if caso.gestiones %}
+                                <div class="space-y-4">
+                                    {% for gestion in caso.gestiones %}
+                                    <div class="bg-white p-3 rounded shadow-sm border border-gray-100">
+                                        <div class="flex justify-between items-center mb-1">
+                                            <span class="text-xs font-bold text-blue-600">{{ gestion.usuario.nombre_completo }}</span>
+                                            <span class="text-xs text-gray-400">{{ gestion.fecha_movimiento.strftime('%d/%m %H:%M') }}</span>
+                                        </div>
+                                        <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ gestion.observacion }}</p>
+                                    </div>
+                                    {% endfor %}
                                 </div>
-                                <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ gestion.observacion }}</p>
-                            </div>
-                            {% endfor %}
+                                {% elif caso.observaciones_gestion %}
+                                <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ caso.observaciones_gestion }}</p>
+                                {% else %}
+                                <p class="text-sm text-gray-400 italic">Sin observaciones registradas.</p>
+                                {% endif %}
                         </div>
-                    {% elif caso.observaciones_gestion %}
-                        <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ caso.observaciones_gestion }}</p>
-                    {% else %}
-                        <p class="text-sm text-gray-400 italic">Sin observaciones registradas.</p>
-                    {% endif %}
+                    </div>
                 </div>
-            </div>
-              </div>
             </div>
             {% endif %}
 

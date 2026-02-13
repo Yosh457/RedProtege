@@ -170,6 +170,7 @@ class Caso(db.Model):
     acompanante_doc_numero = db.Column(db.String(50))
     acompanante_doc_otro_descripcion = db.Column(db.String(100))
     acompanante_domicilio = db.Column(db.Text)
+    acompanante_presente = db.Column(db.Boolean, default=False, nullable=False)
 
     # --- D) DENUNCIA ---
     denuncia_realizada = db.Column(db.Boolean, default=False)
