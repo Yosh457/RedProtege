@@ -3,21 +3,21 @@
 {% block title %}Bandeja de Casos{% endblock %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto my-8 px-4 sm:px-6 lg:px-8">
+<div class="max-w-7xl mx-auto my-8 px-4">
 
     <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
         <div class="w-full md:w-auto">
             <h1 class="text-3xl font-bold text-gray-900 tracking-tight">Bandeja de Casos</h1>
             <p class="text-sm text-gray-500 mt-1">
-                Contexto: <span class="font-semibold text-blue-600">{{ nombre_filtro }}</span>
+                Ciclo Vital: <span class="font-semibold text-blue-600">{{ nombre_filtro }}</span>
             </p>
         </div>
 
         <div class="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
 
+            {# 1. BOTÓN SUBROGANCIA (Solo Referente) #}
             {% if current_user.rol.nombre == 'Referente' %}
                 {% if subrogante_activo %}
-                    <!-- Deshabilitar (con modal bonito) -->
                     <button type="button" id="btn-abrir-modal-subrogancia-off"
                             class="bg-red-100 hover:bg-red-200 text-red-700 border border-red-200 font-medium py-2.5 px-5 rounded-lg shadow-sm transition flex items-center justify-center gap-2"
                             title="Subrogante activo: {{ subrogante_activo.nombre_completo }}">
@@ -28,7 +28,6 @@
                         <span class="text-xs font-semibold opacity-80">({{ subrogante_activo.nombre_completo }})</span>
                     </button>
                 {% else %}
-                    <!-- Habilitar (con modal select) -->
                     <button type="button" id="btn-abrir-modal-subrogancia-on"
                             {% if not candidatos_subrogancia %}disabled{% endif %}
                             class="bg-orange-100 hover:bg-orange-200 text-orange-700 border border-orange-200 font-medium py-2.5 px-5 rounded-lg shadow-sm transition flex items-center justify-center gap-2
@@ -41,20 +40,24 @@
                 {% endif %}
             {% endif %}
 
-            {% if current_user.rol.nombre in ['Admin', 'Referente'] %}
+            {# 2. BOTÓN REPORTE MASIVO (Solo Admin y Torre Control) #}
+            {# Referente ya NO lo ve #}
+            {% if current_user.rol.nombre in ['Admin', 'Torre Control'] %}
             <form id="form-reporte" action="{{ url_for('casos.enviar_reporte_masivo') }}" method="POST" class="flex">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                 <button type="button" id="btn-abrir-modal-reporte"
                         class="bg-purple-600 hover:bg-purple-700 text-white font-medium py-2.5 px-5 rounded-lg shadow-sm transition flex items-center justify-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 00-2-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
                     Enviar Reporte
                 </button>
             </form>
             {% endif %}
 
+            {# 3. BOTÓN EXPORTAR (Todos menos Solicitante) #}
+            {% if current_user.rol.nombre != 'Solicitante' %}
             <a href="{{ url_for('casos.exportar_excel', search=request.args.get('search', ''), estado=request.args.get('estado', '')) }}"
             class="bg-green-600 hover:bg-green-700 text-white font-medium py-2.5 px-5 rounded-lg shadow-sm transition flex items-center justify-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -63,8 +66,11 @@
                 </svg>
                 Exportar Excel
             </a>
+            {% endif %}
 
-            {% if current_user.rol.nombre in ['Admin', 'Referente', 'Solicitante'] %}
+            {# 4. BOTÓN NUEVO CASO (Solo Admin, Torre Control, Solicitante) #}
+            {# Referente ya NO lo ve #}
+            {% if current_user.rol.nombre in ['Admin', 'Torre Control', 'Solicitante'] %}
             <a href="{{ url_for('solicitudes.formulario') }}"
             class="bg-gray-900 hover:bg-gray-800 text-white font-medium py-2.5 px-5 rounded-lg shadow-sm transition flex items-center justify-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -76,6 +82,7 @@
         </div>
     </div>
 
+    {# --- KPI CARDS Y GRÁFICOS --- #}
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
             <div>
@@ -116,7 +123,6 @@
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        
         <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
             <div class="flex justify-between items-center mb-6">
                 <h3 class="text-lg font-bold text-gray-800">Estado de Casos</h3>
@@ -178,7 +184,6 @@
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        
         <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
             <div class="flex justify-between items-center mb-6">
                 <h3 class="text-lg font-bold text-gray-800">Recintos de Notificación</h3>
@@ -260,47 +265,98 @@
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Fecha Ingreso</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Folio</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Documento</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider w-32">Fecha Ingreso</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider w-24">Folio</th>
+                        
+                        {# 1. COLUMNA DOCUMENTO RESTAURADA #}
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider w-32">Documento</th>
+                        
                         <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Paciente</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Ciclo</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Asignado a</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Estado</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider w-24">Ciclo</th>
+                        
+                        {# 3. COLUMNA EQUIPO ASIGNADO (ANCHO FIJO w-56) #}
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider w-56">Equipo Asignado</th>
+                        
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider w-32">Estado</th>
+                        
+                        {# Ocultar columna Acciones para Coordinador EPI #}
+                        {% if current_user.rol.nombre != 'Coordinador EPI' %}
                         <th scope="col" class="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">Acciones</th>
+                        {% endif %}
                     </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
                     {% for caso in pagination.items %}
                     <tr class="hover:bg-gray-50 transition">
-                        <td class="px-6 py-4 whitespace-nowrap text-xs font-medium text-gray-500">{{ caso.fecha_ingreso.strftime('%d-%m-%Y %H:%M') }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-800">#{{ caso.folio_atencion }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{{ caso.paciente_doc_tipo or 'RUT' }}: {{ caso.paciente_doc_numero or caso.origen_rut or 'S/I' }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ caso.origen_nombres }} {{ caso.origen_apellidos }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap"><span class="px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">{{ caso.ciclo_vital.nombre }}</span></td>
-                        <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
-                            {% if caso.asignado_a %}
-                                <span class="bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded font-bold">{{ caso.asignado_a.nombre_completo }}</span>
-                            {% else %}
-                                <span class="text-gray-400 italic">Sin asignar</span>
-                            {% endif %}
+                        {# 2. FECHA RESTAURADA (CON HORA) #}
+                        <td class="px-6 py-4 whitespace-nowrap text-xs font-medium text-gray-500">
+                            {{ caso.fecha_ingreso.strftime('%d-%m-%Y %H:%M') }}
                         </td>
+                        
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-800">
+                            #{{ caso.folio_atencion }}
+                        </td>
+                        
+                        {# CELDA DOCUMENTO (SEPARADA) #}
+                        <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-600 font-mono">
+                            {{ caso.paciente_doc_tipo or 'RUT' }}: {{ caso.paciente_doc_numero or caso.origen_rut or 'S/I' }}
+                        </td>
+                        
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {{ caso.origen_nombres }} {{ caso.origen_apellidos }}
+                        </td>
+                        
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">
+                                {{ caso.ciclo_vital.nombre }}
+                            </span>
+                        </td>
+                        
+                        {# CELDA EQUIPO ASIGNADO (DUAL) #}
+                        <td class="px-6 py-4 text-xs text-gray-500">
+                            <div class="flex flex-col gap-1.5">
+                                {% if caso.asignado_ts %}
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-green-50 text-green-700 border border-green-200 truncate max-w-[200px]" title="Trabajador Social: {{ caso.asignado_ts.nombre_completo }}">
+                                        TS: {{ caso.asignado_ts.nombre_completo }}
+                                    </span>
+                                {% elif caso.asignado_a %}
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-green-50 text-green-700 border border-green-200 truncate max-w-[200px]" title="Trabajador Social: {{ caso.asignado_a.nombre_completo }}">
+                                        TS: {{ caso.asignado_a.nombre_completo }}
+                                    </span>
+                                {% else %}
+                                    <span class="text-gray-400 italic text-[10px]">TS: Sin asignar</span>
+                                {% endif %}
+
+                                {% if caso.asignado_coord %}
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 truncate max-w-[200px]" title="Coordinador Ciclo: {{ caso.asignado_coord.nombre_completo }}">
+                                        Coord: {{ caso.asignado_coord.nombre_completo }}
+                                    </span>
+                                {% else %}
+                                    <span class="text-gray-400 italic text-[10px]">Coord: Sin asignar</span>
+                                {% endif %}
+                            </div>
+                        </td>
+
                         <td class="px-6 py-4 whitespace-nowrap">
                             {% if caso.estado == 'PENDIENTE_RESCATAR' %}
-                                <span class="px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800 border border-yellow-200">Pendiente rescatar</span>
+                                <span class="px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800 border border-yellow-200">Pendiente</span>
                             {% elif caso.estado == 'EN_SEGUIMIENTO' %}
-                                <span class="px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 border border-blue-200">En seguimiento</span>
+                                <span class="px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 border border-blue-200">Seguimiento</span>
                             {% elif caso.estado == 'CERRADO' %}
                                 <span class="px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-600 border border-gray-200">Cerrado</span>
                             {% endif %}
                         </td>
+                        
+                        {# Botón Ver Caso (Oculto para EPI) #}
+                        {% if current_user.rol.nombre != 'Coordinador EPI' %}
                         <td class="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
                             <a href="{{ url_for('casos.ver_caso', id=caso.id) }}" class="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 transition text-xs font-bold shadow-sm">Ver Caso</a>
                         </td>
+                        {% endif %}
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="8" class="px-6 py-12 text-center">
+                        <td colspan="9" class="px-6 py-12 text-center">
                             <div class="flex flex-col items-center justify-center">
                                 <svg class="h-12 w-12 text-gray-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />

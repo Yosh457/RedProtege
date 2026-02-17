@@ -20,16 +20,6 @@
                     {% elif caso.estado == 'EN_SEGUIMIENTO' %}En seguimiento
                     {% else %}Cerrado{% endif %}
                 </span>
-
-                {% if caso.asignado_a %}
-                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800">
-                        Asignado: {{ caso.asignado_a.nombre_completo }}
-                    </span>
-                {% else %}
-                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-700">
-                        Sin asignar
-                    </span>
-                {% endif %}
             </div>
 
             <p class="text-gray-500 mt-1">
@@ -44,8 +34,8 @@
         <a href="{{ url_for('casos.index') }}" class="btn btn-secondary">Volver a la Bandeja</a>
     </div>
 
-    {# --- BLOQUE DE ASIGNACIÓN (Solo Admin/Referente) --- #}
-    {% if current_user.rol and current_user.rol.nombre in ['Admin', 'Referente'] and caso.estado != 'CERRADO' %}
+    {# --- BLOQUE DE ASIGNACIÓN DUAL (Solo Admin/Referente y si no está cerrado) --- #}
+    {% if puede_asignar and caso.estado != 'CERRADO' %}
     <div class="bg-blue-50 border border-blue-200 rounded-xl p-6 mb-8 shadow-sm">
         <h3 class="text-lg font-bold text-blue-800 mb-4 flex items-center gap-2">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -53,44 +43,72 @@
                       d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z">
                 </path>
             </svg>
-            Asignación de Profesional
+            Asignación de Profesionales
         </h3>
 
-        <form method="post" class="flex flex-col md:flex-row gap-4 items-end">
+        <form method="post" class="flex flex-col gap-4">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
             <input type="hidden" name="asignar_funcionario" value="1"/>
 
-            <div class="w-full md:w-1/2">
-                <label class="block text-sm font-medium text-gray-700 mb-1">Funcionario Encargado</label>
-                <select name="funcionario_id" class="w-full rounded-lg border-gray-300" required>
-                    <option value="">Seleccione Funcionario...</option>
-                    {% for f in funcionarios %}
-                        <option value="{{ f.id }}" {% if caso.asignado_a_usuario_id == f.id %}selected{% endif %}>
-                            {{ f.nombre_completo }}
-                        </option>
-                    {% endfor %}
-                </select>
-                <p class="text-xs text-gray-500 mt-1">
-                    Solo se listan funcionarios activos y compatibles con el ciclo.
-                </p>
+            <div class="flex flex-col md:flex-row gap-6">
+                <div class="w-full md:w-1/2">
+                    <label class="block text-sm font-bold text-gray-700 mb-1">Trabajador(a) Social (Gestor)</label>
+                    <select name="ts_id" class="w-full rounded-lg border-gray-300 focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">-- Sin Asignar --</option>
+                        {% for f in funcionarios_ts %}
+                            <option value="{{ f.id }}" {% if caso.asignado_ts_id == f.id %}selected{% endif %}>
+                                {{ f.nombre_completo }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">Encargado de la gestión clínica.</p>
+                </div>
+
+                <div class="w-full md:w-1/2">
+                    <label class="block text-sm font-bold text-gray-700 mb-1">Coordinador de Ciclo (Supervisor)</label>
+                    <select name="coord_id" class="w-full rounded-lg border-gray-300 focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">-- Sin Asignar --</option>
+                        {% for c in funcionarios_coord %}
+                            <option value="{{ c.id }}" {% if caso.asignado_coord_id == c.id %}selected{% endif %}>
+                                {{ c.nombre_completo }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">Apoyo y supervisión del caso.</p>
+                </div>
             </div>
 
-            <button type="submit" class="btn btn-primary">
-                {{ 'Reasignar' if caso.asignado_a_usuario_id else 'Asignar Caso' }}
-            </button>
+            <div class="flex justify-end mt-2">
+                <button type="submit" class="btn btn-primary">
+                    Guardar Asignaciones
+                </button>
+            </div>
         </form>
 
-        {% if caso.asignado_a and caso.asignado_por and caso.asignado_at %}
-            <p class="text-xs text-blue-700 mt-3">
-                Actualmente asignado a: <strong>{{ caso.asignado_a.nombre_completo }}</strong>
-                (por <strong>{{ caso.asignado_por.nombre_completo }}</strong>
-                el <strong>{{ caso.asignado_at.strftime('%d/%m %H:%M') }}</strong>)
-            </p>
-        {% elif caso.asignado_a %}
-            <p class="text-xs text-blue-700 mt-3">
-                Actualmente asignado a: <strong>{{ caso.asignado_a.nombre_completo }}</strong>
+        {% if caso.asignado_por and caso.asignado_at %}
+            <p class="text-xs text-blue-700 mt-3 border-t border-blue-200 pt-2">
+                Última actualización por <strong>{{ caso.asignado_por.nombre_completo }}</strong>
+                el {{ caso.asignado_at.strftime('%d/%m/%Y %H:%M') }}
             </p>
         {% endif %}
+    </div>
+    {% endif %}
+
+    {# --- INFO DE ASIGNACIÓN (VISUALIZACIÓN) --- #}
+    {% if not puede_asignar or caso.estado == 'CERRADO' %}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+            <span class="block text-xs font-bold text-gray-500 uppercase">Trabajador(a) Social</span>
+            <span class="text-gray-900 font-medium">
+                {{ caso.asignado_ts.nombre_completo if caso.asignado_ts else 'Sin asignar' }}
+            </span>
+        </div>
+        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+            <span class="block text-xs font-bold text-gray-500 uppercase">Coordinador de Ciclo</span>
+            <span class="text-gray-900 font-medium">
+                {{ caso.asignado_coord.nombre_completo if caso.asignado_coord else 'Sin asignar' }}
+            </span>
+        </div>
     </div>
     {% endif %}
 
@@ -392,7 +410,7 @@
                                     <div class="bg-white p-3 rounded shadow-sm border border-gray-100">
                                         <div class="flex justify-between items-center mb-1">
                                             <span class="text-xs font-bold text-blue-600">{{ gestion.usuario.nombre_completo }}</span>
-                                            <span class="text-xs text-gray-400">{{ gestion.fecha_movimiento.strftime('%d/%m %H:%M') }}</span>
+                                            <span class="text-xs text-gray-400">{{ gestion.fecha_movimiento.strftime('%d/%m/%Y %H:%M') }}</span>
                                         </div>
                                         <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ gestion.observacion }}</p>
                                     </div>
@@ -418,7 +436,17 @@
 
                 {% set rol = (current_user.rol.nombre if current_user.rol else '') %}
                 {% set es_cerrado = (caso.estado == 'CERRADO') %}
-                {% set puede_gestionar = (rol == 'Admin') or (rol == 'Funcionario' and caso.asignado_a_usuario_id == current_user.id) %}
+                
+                {# PERMISOS PARA BOTÓN "INGRESAR GESTIÓN" #}
+                {# Admin siempre puede. Trabajador Social solo si es el asignado. #}
+                {% set puede_gestionar = False %}
+                {% if rol == 'Admin' %}
+                    {% set puede_gestionar = True %}
+                {% elif rol == 'Trabajador(a) Social' %}
+                    {% if (caso.asignado_ts_id == current_user.id) or (caso.asignado_a_usuario_id == current_user.id) %}
+                        {% set puede_gestionar = True %}
+                    {% endif %}
+                {% endif %}
 
                 {% if es_cerrado %}
                     {# CASO CERRADO: Aviso y Descarga #}
@@ -457,8 +485,8 @@
                 {% else %}
                     <div class="bg-yellow-50 p-4 rounded text-yellow-800 text-sm text-center">
                         <p>Este caso es de solo lectura para tu perfil.</p>
-                        {% if rol == 'Funcionario' %}
-                            <p class="mt-1 text-xs">Solo el funcionario asignado puede gestionarlo.</p>
+                        {% if rol == 'Trabajador(a) Social' %}
+                            <p class="mt-1 text-xs">Solo el Trabajador Social asignado puede gestionarlo.</p>
                         {% endif %}
                     </div>
                 {% endif %}

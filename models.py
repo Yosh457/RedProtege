@@ -180,14 +180,25 @@ class Caso(db.Model):
     denuncia_profesional_nombre = db.Column(db.String(100))
     denuncia_profesional_cargo = db.Column(db.String(100))
 
-    # --- E) ASIGNACIÓN ---
-    asignado_a_usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), index=True)
-    asignado_por_usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'))
-    asignado_at = db.Column(db.DateTime)
+    # --- E) ASIGNACIÓN (COMPAT + NUEVO MODELO DUAL) ---
 
-    # Relaciones explícitas con foreign_keys definidos para evitar ambigüedad
+    # ✅ LEGACY (NO borrar todavía, se elimina en la fase final cuando todo esté migrado)
+    asignado_a_usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), index=True)
     asignado_a = db.relationship('Usuario', foreign_keys=[asignado_a_usuario_id], backref='casos_asignados')
+
+    # ✅ NUEVO: Trabajador(a) Social (gestiona el caso)
+    asignado_ts_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), index=True)
+    asignado_ts = db.relationship('Usuario', foreign_keys=[asignado_ts_id], backref='casos_ts')
+
+    # ✅ NUEVO: Coordinador de Ciclo (supervisa / apoyo)
+    asignado_coord_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), index=True)
+    asignado_coord = db.relationship('Usuario', foreign_keys=[asignado_coord_id], backref='casos_coord')
+
+    # Quien realizó la asignación
+    asignado_por_usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'))
     asignado_por = db.relationship('Usuario', foreign_keys=[asignado_por_usuario_id], backref='casos_distribuidos')
+
+    asignado_at = db.Column(db.DateTime)
 
     # --- F) GESTIÓN CLÍNICA / SEGUIMIENTO (FASE 4 P2 - CÓDIGOS LIMPIOS) ---
     recinto_inscrito_id = db.Column(db.Integer, db.ForeignKey('catalogo_establecimientos.id'))
@@ -278,13 +289,18 @@ class AuditoriaCaso(db.Model):
             'titulo': self.accion.replace('_', ' ').title()
         }
 
-        if self.accion in ['ASIGNACION', 'REASIGNACION']:
+        # Agrupamos todas las variantes de asignación
+        if 'ASIGNACION' in self.accion and 'EMAIL' not in self.accion:
             config = {
                 'color_bg': 'bg-green-100',
                 'color_text': 'text-green-600',
                 'icono': 'M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z', # User Add
-                'titulo': 'Asignación de Profesional'
+                # Título dinámico según el tipo exacto
+                'titulo': 'Asignación de Profesional' 
             }
+            if 'TS' in self.accion: config['titulo'] = 'Asignación Trabajador Social'
+            if 'COORD' in self.accion: config['titulo'] = 'Asignación Coordinador'
+            if 'REASIGNACION' in self.accion: config['titulo'] = 'Reasignación Profesional' # Opcional: prefijo 'Re'
         elif self.accion == 'GESTION_CLINICA':
             config = {
                 'color_bg': 'bg-blue-100',

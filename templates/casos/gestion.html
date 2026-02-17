@@ -482,9 +482,9 @@
                 </p>
             </div>
             <div class="items-center px-4 py-3">
-                <form method="post" action="{{ url_for('casos.cerrar_caso', id=caso.id) }}">
+                <form method="post" action="{{ url_for('casos.cerrar_caso', id=caso.id) }}" id="form-cierre-caso">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-                    <button type="submit" class="px-4 py-2 bg-red-600 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-300">
+                    <button type="submit" id="btn-confirmar-cierre" class="px-4 py-2 bg-red-600 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-300">
                         Sí, Cerrar Caso
                     </button>
                 </form>
@@ -657,5 +657,22 @@
         const acompPresente = form ? (form.dataset.acompanantePresente === 'true') : false;
         toggleAcomp(acompPresente);
     });
+
+    // --- Lógica Cierre Caso (Prevención Doble Click) ---
+    (function() {
+        const form = document.getElementById('form-cierre-caso');
+        const btn = document.getElementById('btn-confirmar-cierre');
+
+        if (form && btn) {
+            form.addEventListener('submit', function() {
+                // Deshabilitar botón
+                btn.disabled = true;
+                // Cambiar texto
+                btn.textContent = 'Cerrando Caso...';
+                // Añadir opacidad para feedback visual
+                btn.classList.add('opacity-75', 'cursor-not-allowed');
+            });
+        }
+    })();
 </script>
 {% endblock %}

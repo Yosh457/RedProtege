@@ -51,8 +51,16 @@ def rut_excede_largo(rut_normalizado):
 def formulario():
     """
     Formulario de ingreso de casos.
-    Disponible para roles: Solicitante (principal), Admin, Referente.
+    Disponible SOLO para: Solicitante, Admin, Torre Control.
     """
+    # --- NUEVO: MEGA-FILTRO DE SEGURIDAD ---
+    roles_permitidos = ['Admin', 'Torre Control', 'Solicitante']
+    if current_user.rol.nombre not in roles_permitidos:
+        # Registrar el intento de acceso no autorizado (opcional pero recomendado)
+        registrar_log("Seguridad", f"Intento de acceso denegado a formulario por {current_user.email} (Rol: {current_user.rol.nombre})")
+        flash("No tienes permisos para ingresar nuevas solicitudes al sistema.", "danger")
+        return redirect(url_for('casos.index'))
+    
     # Carga de catálogos para los selects
     recintos = CatalogoRecinto.query.filter_by(activo=True).order_by(CatalogoRecinto.nombre).all()
     vulneraciones = CatalogoVulneracion.query.filter_by(activo=True).order_by(CatalogoVulneracion.nombre).all()

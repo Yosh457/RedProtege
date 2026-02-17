@@ -59,7 +59,7 @@ def index():
     titulo_vista = "Vista Global"
 
     # =========================================================
-    # A. FILTROS DE SEGURIDAD (ROLES) + SUBROGANCIA
+    # A. FILTROS DE SEGURIDAD (RBAC) + SUBROGANCIA
     # =========================================================
     filters = []
 
@@ -67,8 +67,12 @@ def index():
     candidatos_subrogancia = []
     subrogante_activo = None  # objeto Usuario (el que me está subrogando)
 
-    if rol_nombre == 'Admin':
-        pass
+    if rol_nombre in ['Admin', 'Torre Control']:
+        titulo_vista = "Vista Global"
+
+    elif rol_nombre == 'Coordinador EPI':
+        # EPI ve todo, pero en el frontend le ocultaremos las acciones
+        titulo_vista = "Vista Global (Coordinador EPI)"
 
     elif rol_nombre in ['Referente', 'Visualizador']:
         ciclos_permitidos = []
@@ -95,13 +99,8 @@ def index():
         # Aplicar filtro por ciclos permitidos si corresponde
         if ciclos_permitidos:
             filters.append(Caso.ciclo_vital_id.in_(ciclos_permitidos))
-        else:
-            # Si no tiene ciclo propio ni subrogado:
-            # si tu regla es que "sin ciclo" = global, no filtramos.
-            # (mantiene la lógica actual)
-            pass
 
-        # --- UI Subrogancia: solo si soy Referente (no Visualizador) ---
+        # UI Subrogancia solo para Referentes
         if rol_nombre == 'Referente':
             # a) Lista de candidatos (otros referentes activos, distintos a mí)
             candidatos_subrogancia = Usuario.query.join(Rol).filter(
@@ -120,11 +119,21 @@ def index():
                     # Si por alguna razón NO es query y sí es lista, igual funcionará
                     subrogante_activo = current_user.subrogantes_activos[0] if current_user.subrogantes_activos else None
 
-    elif rol_nombre == 'Funcionario':
-        filters.append(Caso.asignado_a_usuario_id == current_user.id)
-        titulo_vista = "Mis Casos Asignados"
+    elif rol_nombre == 'Trabajador(a) Social':
+        # NUEVO: Filtra por la columna nueva de TS o por la legacy (mientras dure la migración)
+        filters.append(or_(
+            Caso.asignado_ts_id == current_user.id,
+            Caso.asignado_a_usuario_id == current_user.id
+        ))
+        titulo_vista = "Mis Casos Asignados (Gestión)"
+
+    elif rol_nombre == 'Coordinador Ciclo':
+        # NUEVO: Filtra por la columna nueva de Coordinador
+        filters.append(Caso.asignado_coord_id == current_user.id)
+        titulo_vista = "Mis Casos Supervisados"
 
     else:
+        # Si es Solicitante y trata de entrar a la bandeja, lo pateamos
         abort(403)
 
     # Query Base (Solo Seguridad)
@@ -314,174 +323,291 @@ def index():
     )
 
 @casos_bp.route('/ver/<int:id>', methods=['GET', 'POST'])
+@login_required
 def ver_caso(id):
     caso = Caso.query.get_or_404(id)
     rol_nombre = current_user.rol.nombre
 
-    # --- 1. SEGURIDAD DE ACCESO (Permisos) ---
+    # =========================================================
+    # 1. SEGURIDAD DE ACCESO (Permisos)
+    # =========================================================
     permitido = False
-    
-    if rol_nombre == 'Admin':
-        permitido = True
-        
-    elif rol_nombre in ['Referente', 'Visualizador']:
-        # Acceso propio (global o su ciclo)
-        acceso_propio = (current_user.ciclo_asignado_id is None) or (caso.ciclo_vital_id == current_user.ciclo_asignado_id)
 
-        # Acceso por subrogancia (si estoy subrogando a un titular con ciclo)
+    # Roles globales
+    if rol_nombre in ['Admin', 'Torre Control']:
+        permitido = True
+
+    # Referente / Visualizador (por ciclo o subrogancia)
+    elif rol_nombre in ['Referente', 'Visualizador']:
+        acceso_propio = (
+            current_user.ciclo_asignado_id is None or
+            caso.ciclo_vital_id == current_user.ciclo_asignado_id
+        )
+
         acceso_subrogado = False
         if current_user.subrogante_de and current_user.subrogante_de.ciclo_asignado_id:
-            if caso.ciclo_vital_id == current_user.subrogante_de.ciclo_asignado_id:
-                acceso_subrogado = True
+            acceso_subrogado = caso.ciclo_vital_id == current_user.subrogante_de.ciclo_asignado_id
 
-        if acceso_propio or acceso_subrogado:
+        permitido = acceso_propio or acceso_subrogado
+
+    # Trabajador(a) Social
+    elif rol_nombre == 'Trabajador(a) Social':
+        if (
+            caso.asignado_ts_id == current_user.id or
+            caso.asignado_a_usuario_id == current_user.id  # legacy
+        ):
             permitido = True
-            
-    elif rol_nombre == 'Funcionario':
-        # Solo si está asignado a él
-        if caso.asignado_a_usuario_id == current_user.id:
+
+    # Coordinador de Ciclo
+    elif rol_nombre == 'Coordinador Ciclo':
+        if caso.asignado_coord_id == current_user.id:
             permitido = True
-    
+
     if not permitido:
-        abort(403) # Acceso Denegado
+        abort(403)
 
-    # --- 2. LÓGICA DE ASIGNACIÓN (Solo Admin/Referente) ---
-    funcionarios_disponibles = []
-    
-    # Solo Admin y Referente pueden asignar. Visualizador solo mira. Si el caso está cerrado, no se procesa asignación.
-    if rol_nombre in ['Admin', 'Referente'] and caso.estado != 'CERRADO':
+    # =========================================================
+    # 2. CARGA DE USUARIOS ASIGNABLES
+    # =========================================================
+    funcionarios_ts = []
+    funcionarios_coord = []
+
+    # Solo Admin y Referente pueden asignar. 
+    # Torre Control ve pero NO asigna (según matriz).
+    puede_asignar = rol_nombre in ['Admin', 'Referente']
+
+    if puede_asignar and caso.estado != 'CERRADO':
         
-        # Cargar lista de funcionarios para el select
-        q_func = Usuario.query.join(Rol).filter(Rol.nombre == 'Funcionario').filter(Usuario.activo == True)
-        
-        # Si es Referente de ciclo específico, solo listar funcionarios de ESE ciclo
+        # A) Cargar Trabajadores Sociales (ex Funcionarios)
+        q_ts = Usuario.query.join(Rol).filter(
+            Rol.nombre == 'Trabajador(a) Social',
+            Usuario.activo == True
+        )
+        # B) Cargar Coordinadores de Ciclo
+        q_coord = Usuario.query.join(Rol).filter(
+            Rol.nombre == 'Coordinador Ciclo',
+            Usuario.activo == True
+        )
+
+        # Filtro por Ciclo (Si es Referente)
         if rol_nombre == 'Referente':
-            # Mostrar funcionarios del ciclo del CASO (clave para subrogancia)
-            q_func = q_func.filter(Usuario.ciclo_asignado_id == caso.ciclo_vital_id)
-            
-        funcionarios_disponibles = q_func.all()
+            # Solo mostrar profesionales del ciclo del CASO
+            q_ts = q_ts.filter(Usuario.ciclo_asignado_id == caso.ciclo_vital_id)
+            q_coord = q_coord.filter(Usuario.ciclo_asignado_id == caso.ciclo_vital_id)
 
-        # Procesar Formulario de Asignación
-        if request.method == 'POST' and 'asignar_funcionario' in request.form:
-            # Doble check por si forzaron el POST
-            if caso.estado == 'CERRADO':
-                flash('El caso está cerrado. No se puede asignar', 'danger')
-                return redirect(url_for('casos.ver_caso', id=caso.id))
-            
-            nuevo_asignado_id = request.form.get('funcionario_id')
-            
-            if nuevo_asignado_id:
-                try:
-                    nuevo_asignado_id = int(nuevo_asignado_id)
-                    funcionario_nuevo = Usuario.query.get(nuevo_asignado_id)
+        funcionarios_ts = q_ts.order_by(Usuario.nombre_completo).all()
+        funcionarios_coord = q_coord.order_by(Usuario.nombre_completo).all()
 
-                    # Validaciones extra de seguridad
-                    if not funcionario_nuevo or not funcionario_nuevo.activo:
-                        flash('El funcionario seleccionado no es válido o está inactivo.', 'danger')
-                        return redirect(url_for('casos.ver_caso', id=caso.id))
+    # =========================================================
+    # 3. PROCESAR ASIGNACIÓN DUAL
+    # =========================================================
+    if (
+        puede_asignar and
+        caso.estado != 'CERRADO' and
+        request.method == 'POST' and
+        'asignar_funcionario' in request.form
+    ):
+        ts_id = safe_int(request.form.get('ts_id'))
+        coord_id = safe_int(request.form.get('coord_id'))
 
-                    if rol_nombre == 'Referente':
-                        if funcionario_nuevo.ciclo_asignado_id != caso.ciclo_vital_id:
-                            flash('El funcionario debe pertenecer al mismo ciclo vital del caso.', 'danger')
-                            return redirect(url_for('casos.ver_caso', id=caso.id))
-                    
-                    # Datos previos para auditoría
-                    anterior_asignado_id = caso.asignado_a_usuario_id
-                    accion_tipo = 'REASIGNACION' if anterior_asignado_id else 'ASIGNACION'
-                    
-                    # --- A) ACTUALIZAR CASO Y DB (PRIMERO) ---
-                    caso.asignado_a_usuario_id = nuevo_asignado_id
-                    caso.asignado_por_usuario_id = current_user.id
-                    caso.asignado_at = obtener_hora_chile() # Hora Local
-                    
-                    # Avanzar estado automáticamente si estaba pendiente
-                    if caso.estado == 'PENDIENTE_RESCATAR':
-                        caso.estado = 'EN_SEGUIMIENTO'
-                    
-                    # Auditoría de la Asignación
-                    detalles = {
-                        'folio': caso.folio_atencion,
-                        'previo_id': anterior_asignado_id,
-                        'nuevo_id': nuevo_asignado_id,
-                        'nombre_asignado': funcionario_nuevo.nombre_completo,
-                        'asignado_por': current_user.nombre_completo
-                    }
-                    
-                    nueva_auditoria = AuditoriaCaso(
+        # Validar que al menos uno esté asginado (o ambos)
+        if not ts_id and not coord_id:
+            flash('Debe seleccionar al menos un profesional.', 'warning')
+            return redirect(url_for('casos.ver_caso', id=caso.id))
+
+        try:
+            cambios_log = []
+            correos_pendientes = []
+            acciones_auditoria = [] # Lista para guardar auditorías individuales
+
+            # Datos previos para comparar (snapshot antes del cambio)
+            prev_ts_id = caso.asignado_ts_id
+            prev_coord_id = caso.asignado_coord_id
+
+            hay_cambios = False # Flag para saber si hacemos commit
+
+            # -------- ASIGNAR TS --------
+            if ts_id:
+                user_ts = Usuario.query.get(ts_id)
+
+                # Validaciones duras (SIEMPRE)
+                if not user_ts:
+                    flash('Trabajador Social no existe.', 'danger')
+                    return redirect(url_for('casos.ver_caso', id=caso.id))
+
+                if not user_ts.activo:
+                    flash('Trabajador Social se encuentra inactivo.', 'danger')
+                    return redirect(url_for('casos.ver_caso', id=caso.id))
+
+                if rol_nombre == 'Referente' and user_ts.ciclo_asignado_id != caso.ciclo_vital_id:
+                    flash('El TS no pertenece al ciclo del caso.', 'danger')
+                    return redirect(url_for('casos.ver_caso', id=caso.id))
+
+                # Solo continuar si realmente cambió
+                if ts_id != prev_ts_id:
+                    tipo_accion = 'REASIGNACION_TS' if prev_ts_id else 'ASIGNACION_TS'
+
+                    caso.asignado_ts_id = ts_id
+                    caso.asignado_a_usuario_id = ts_id  # legacy
+
+                    cambios_log.append(f"TS: {user_ts.nombre_completo}")
+                    correos_pendientes.append(user_ts)
+
+                    acciones_auditoria.append({
+                        'accion': tipo_accion,
+                        'detalles': {
+                            'rol': 'Trabajador Social',
+                            'previo_id': prev_ts_id,
+                            'nuevo_id': ts_id,
+                            'nombre_asignado': user_ts.nombre_completo
+                        }
+                    })
+
+                    hay_cambios = True
+
+            # -------- ASIGNAR COORD --------
+            if coord_id:
+                user_coord = Usuario.query.get(coord_id)
+
+                # Validaciones duras (SIEMPRE)
+                if not user_coord:
+                    flash('Coordinador no existe.', 'danger')
+                    return redirect(url_for('casos.ver_caso', id=caso.id))
+
+                if not user_coord.activo:
+                    flash('Coordinador se encuentra inactivo.', 'danger')
+                    return redirect(url_for('casos.ver_caso', id=caso.id))
+
+                if rol_nombre == 'Referente' and user_coord.ciclo_asignado_id != caso.ciclo_vital_id:
+                    flash('El Coordinador no pertenece al ciclo del caso.', 'danger')
+                    return redirect(url_for('casos.ver_caso', id=caso.id))
+
+                # Solo continuar si realmente cambió
+                if coord_id != prev_coord_id:
+                    tipo_accion = 'REASIGNACION_COORD' if prev_coord_id else 'ASIGNACION_COORD'
+
+                    caso.asignado_coord_id = coord_id
+
+                    cambios_log.append(f"Coord: {user_coord.nombre_completo}")
+                    correos_pendientes.append(user_coord)
+
+                    acciones_auditoria.append({
+                        'accion': tipo_accion,
+                        'detalles': {
+                            'rol': 'Coordinador Ciclo',
+                            'previo_id': prev_coord_id,
+                            'nuevo_id': coord_id,
+                            'nombre_asignado': user_coord.nombre_completo
+                        }
+                    })
+
+                    hay_cambios = True
+
+            # -------- METADATA --------
+            if hay_cambios:
+                caso.asignado_por_usuario_id = current_user.id
+                caso.asignado_at = obtener_hora_chile()
+
+                # Avanzar estado automáticamente si estaba pendiente de rescatar
+                if caso.estado == 'PENDIENTE_RESCATAR':
+                    caso.estado = 'EN_SEGUIMIENTO'
+
+                # -------- AUDITORÍA --------
+                for item in acciones_auditoria:
+                    # Agregamos quien asignó al detalle
+                    detalles = item['detalles']
+                    detalles['asignado_por'] = current_user.nombre_completo
+                
+                    # Auditoría principal
+                    db.session.add(AuditoriaCaso(
                         caso_id=caso.id,
                         usuario_id=current_user.id,
                         fecha_movimiento=obtener_hora_chile(),
-                        accion=accion_tipo,
+                        accion=item['accion'],
                         detalles_cambio=detalles
-                    )
-                    db.session.add(nueva_auditoria)
-                    
-                    # COMMIT DE LA ASIGNACIÓN (Esto asegura que el cambio persista sí o sí)
-                    db.session.commit()
-                    
-                    # Log General
-                    registrar_log("Asignación Caso", f"Caso #{caso.folio_atencion} asignado a {funcionario_nuevo.nombre_completo}")
-                    flash(f'Caso asignado correctamente a {funcionario_nuevo.nombre_completo}', 'success')
-                    
-                    # --- B) ENVÍO DE CORREO (BEST EFFORT) ---
-                    # Lo hacemos DESPUÉS del commit. Si falla, no rompe la asignación.
+                    ))
+
+                # COMMIT DE LA ASIGNACIÓN (Esto asegura que el cambio persista sí o sí)
+                db.session.commit()
+
+                registrar_log(
+                    "Asignación Dual",
+                    f"Caso #{caso.folio_atencion} asignado a {', '.join(cambios_log)}"
+                )
+
+                # =================================================
+                # 4. ENVÍO DE CORREOS (BEST EFFORT)
+                # =================================================
+                for usuario in correos_pendientes:
                     try:
-                        email_enviado = enviar_aviso_asignacion(funcionario_nuevo, caso, current_user)
-                        
-                        if email_enviado:
-                            # Log éxito email
-                            registrar_log("Email Asignación", f"Enviado a {funcionario_nuevo.email} (Folio: {caso.folio_atencion})")
-                            
-                            # Auditoría opcional recomendada
-                            audit_email = AuditoriaCaso(
-                                caso_id=caso.id,
-                                usuario_id=current_user.id,
-                                fecha_movimiento=obtener_hora_chile(),
-                                accion='EMAIL_ASIGNACION',
-                                detalles_cambio={'status': 'OK', 'destino': funcionario_nuevo.email}
+                        ok = enviar_aviso_asignacion(usuario, caso, current_user)
+
+                        estado = 'OK' if ok else 'ERROR_ENVIO'
+
+                        db.session.add(AuditoriaCaso(
+                            caso_id=caso.id,
+                            usuario_id=current_user.id,
+                            fecha_movimiento=obtener_hora_chile(),
+                            accion='EMAIL_ASIGNACION',
+                            detalles_cambio={
+                                'destino': usuario.email,
+                                'status': estado,
+                                'rol_notificado': usuario.rol.nombre
+                            }
+                        ))
+
+                        if not ok:
+                            flash(
+                                f'Caso asignado, pero no se pudo notificar a {usuario.nombre_completo}.',
+                                'warning'
                             )
-                            db.session.add(audit_email)
-                            db.session.commit()
-                        else:
-                            # Log fallo email
-                            registrar_log("Error Email", f"Fallo al enviar a {funcionario_nuevo.email}")
-                            flash("Aviso: El caso fue asignado, pero no se pudo enviar el correo de notificación.", "warning")
-                            
-                            audit_email_fail = AuditoriaCaso(
-                                caso_id=caso.id,
-                                usuario_id=current_user.id,
-                                fecha_movimiento=obtener_hora_chile(),
-                                accion='EMAIL_ASIGNACION',
-                                detalles_cambio={'status': 'ERROR_ENVIO', 'destino': funcionario_nuevo.email}
-                            )
-                            db.session.add(audit_email_fail)
-                            db.session.commit()
 
                     except Exception as e_mail:
-                        print(f"Excepción crítica enviando correo: {e_mail}")
-                        registrar_log("Error Crítico Email", str(e_mail))
-                    
-                    return redirect(url_for('casos.ver_caso', id=caso.id))
-                    
-                except Exception as e:
-                    db.session.rollback()
-                    flash(f'Error al asignar caso: {str(e)}', 'danger')
+                        registrar_log("Error Email", str(e_mail))
 
-    return render_template('casos/ver.html', 
-                           caso=caso, 
-                           funcionarios=funcionarios_disponibles)
+                        # Auditoría del fallo técnico
+                        db.session.add(AuditoriaCaso(
+                            caso_id=caso.id,
+                            usuario_id=current_user.id,
+                            fecha_movimiento=obtener_hora_chile(),
+                            accion='EMAIL_ASIGNACION_ERROR',
+                            detalles_cambio={
+                                'destino': usuario.email,
+                                'error': str(e_mail)
+                            }
+                        ))
+
+                # Commit SOLO de auditorías de correo
+                db.session.commit()
+
+                flash('Asignación realizada correctamente.', 'success')
+                return redirect(url_for('casos.ver_caso', id=caso.id))
+
+        except Exception as e:
+            db.session.rollback()
+            print(f"Error asignación dual: {e}")
+            flash('Error al procesar la asignación.', 'danger')
+
+    return render_template(
+        'casos/ver.html',
+        caso=caso,
+        funcionarios_ts=funcionarios_ts,
+        funcionarios_coord=funcionarios_coord,
+        puede_asignar=puede_asignar
+    )
 
 # --- NUEVA RUTA: GESTIÓN CLÍNICA (FASE 4 P2) ---
 @casos_bp.route('/gestionar/<int:id>', methods=['GET', 'POST'])
 @login_required
 def gestionar_caso(id):
     """
-    Formulario para que el Funcionario (o Admin) ingrese la gestión clínica y cierre el caso.
+    Formulario para que el Trabajador(a) Social asignado a un caso 
+    (o Admin) ingrese la gestión clínica del caso.
     """
     caso = Caso.query.get_or_404(id)
     rol_nombre = current_user.rol.nombre
 
-    #Si el caso está cerrado, se expulsa inmediatamente
+    #Si el caso está cerrado, no se permite gestionar.
     if caso.estado == 'CERRADO':
         flash('El caso ya está cerrado. No es posible editar la gestión.', 'danger')
         return redirect(url_for('casos.ver_caso', id=caso.id))
@@ -490,9 +616,12 @@ def gestionar_caso(id):
     puede_gestionar = False
     if rol_nombre == 'Admin':
         puede_gestionar = True
-    elif rol_nombre == 'Funcionario' and caso.asignado_a_usuario_id == current_user.id:
-        puede_gestionar = True
+    elif rol_nombre == 'Trabajador(a) Social':
+        # Validar asignación (Dual: nueva o legacy)
+        if (caso.asignado_ts_id == current_user.id) or (caso.asignado_a_usuario_id == current_user.id):
+            puede_gestionar = True
     
+    # Referente, Coordinador Ciclo, Torre Control: solo visualizan, no gestionan
     if not puede_gestionar:
         flash('No tienes permisos para gestionar este caso.', 'danger')
         return redirect(url_for('casos.ver_caso', id=caso.id))
@@ -754,13 +883,16 @@ def cerrar_caso(id):
     caso = Caso.query.get_or_404(id)
     rol_nombre = current_user.rol.nombre
 
-    # 1. Validar Permisos (Admin o Funcionario Asignado)
+    # 1. Validar Permisos (Admin o Trabajador Social Asignado)
     puede_cerrar = False
     if rol_nombre == 'Admin':
         puede_cerrar = True
-    elif rol_nombre == 'Funcionario' and caso.asignado_a_usuario_id == current_user.id:
-        puede_cerrar = True
+    elif rol_nombre == 'Trabajador(a) Social':
+        # Validar asignación dual (nuevo o legacy)
+        if (caso.asignado_ts_id == current_user.id) or (caso.asignado_a_usuario_id == current_user.id):
+            puede_cerrar = True
     
+    # Torre Control / Coord Ciclo -> NO cierran casos, solo visualizan
     if not puede_cerrar:
         flash('No tienes permisos para cerrar este caso.', 'danger')
         return redirect(url_for('casos.ver_caso', id=caso.id))
@@ -807,7 +939,7 @@ def cerrar_caso(id):
         caso.acta_pdf_path = output_path_rel
         db.session.commit()
 
-        # 5. Enviar Correo con Adjunto (Best Effort)
+        # 5. Enviar Correo (Best Effort)
         try:
             enviar_aviso_cierre(caso, current_user)
             flash('Caso cerrado exitosamente. Acta generada y notificaciones enviadas.', 'success')
@@ -830,20 +962,29 @@ def cerrar_caso(id):
 def descargar_acta(id):
     """
     Endpoint protegido para descargar el PDF del acta.
-    Incluye protección robusta contra Path Traversal, auditoría de descarga
-    y validación de permisos extendida (asignado o cerrador).
+    Incluye:
+    - Validación estricta de permisos (roles nuevos + asignación dual)
+    - Protección robusta contra Path Traversal
+    - Auditoría de descarga
     """
     caso = Caso.query.get_or_404(id)
     rol_nombre = current_user.rol.nombre
 
+    # =========================================================
     # 1. VALIDACIÓN DE PERMISOS
+    # =========================================================
     permitido = False
-    
-    if rol_nombre == 'Admin':
+
+    # --- Roles Globales ---
+    if rol_nombre in ['Admin', 'Torre Control', 'Coordinador EPI']:
         permitido = True
-        
+
+    # --- Referente / Visualizador (por ciclo + subrogancia) ---
     elif rol_nombre in ['Referente', 'Visualizador']:
-        acceso_propio = (current_user.ciclo_asignado_id is None) or (caso.ciclo_vital_id == current_user.ciclo_asignado_id)
+        acceso_propio = (
+            current_user.ciclo_asignado_id is None or
+            caso.ciclo_vital_id == current_user.ciclo_asignado_id
+        )
 
         acceso_subrogado = False
         if current_user.subrogante_de and current_user.subrogante_de.ciclo_asignado_id:
@@ -852,66 +993,86 @@ def descargar_acta(id):
 
         if acceso_propio or acceso_subrogado:
             permitido = True
-            
-    elif rol_nombre == 'Funcionario':
-        # AJUSTE PERMISOS: Permitido si es el asignado actual O quien cerró el caso
-        es_asignado = (caso.asignado_a_usuario_id == current_user.id)
+
+    # --- Trabajador(a) Social ---
+    elif rol_nombre == 'Trabajador(a) Social':
+        es_asignado = (
+            caso.asignado_ts_id == current_user.id or
+            caso.asignado_a_usuario_id == current_user.id  # legacy
+        )
         es_quien_cerro = (caso.usuario_cierre_id == current_user.id)
-        
+
         if es_asignado or es_quien_cerro:
             permitido = True
-            
+
+    # --- Coordinador de Ciclo ---
+    elif rol_nombre == 'Coordinador Ciclo':
+        if caso.asignado_coord_id == current_user.id:
+            permitido = True
+
     if not permitido:
         flash("No tienes permisos para descargar este documento.", "danger")
         return redirect(url_for('casos.index'))
 
-    # 2. VALIDAR EXISTENCIA EN BD
+    # =========================================================
+    # 2. VALIDAR EXISTENCIA DE ACTA EN BD
+    # =========================================================
     if not caso.acta_pdf_path:
         flash('El caso no tiene un acta generada.', 'warning')
         return redirect(url_for('casos.ver_caso', id=caso.id))
 
     try:
-        # 3. CONSTRUCCIÓN Y SEGURIDAD DE RUTA (PATH TRAVERSAL ROBUSTO)
-        
+        # =====================================================
+        # 3. CONSTRUCCIÓN Y SEGURIDAD DE RUTA (PATH TRAVERSAL)
+        # =====================================================
+
         # Base del proyecto (un nivel arriba de blueprints/)
         BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-        
-        # Limpiamos la ruta relativa de BD
+
+        # Normalizar ruta almacenada en BD
         ruta_relativa = caso.acta_pdf_path.replace('\\', '/').lstrip('/')
-        
-        # Resolvemos la ruta absoluta final del archivo solicitado
+
+        # Resolver ruta absoluta final
         path_absoluto = os.path.abspath(os.path.join(BASE_DIR, ruta_relativa))
-        
-        # Definimos la "jaula" autorizada (carpeta actas)
+
+        # Carpeta autorizada (jaula)
         carpeta_actas = os.path.abspath(os.path.join(BASE_DIR, 'uploads', 'actas'))
+        carpeta_con_sep = os.path.join(carpeta_actas, '')  # asegura separador final
 
-        # AJUSTE 1: Validación estricta con os.sep para evitar falsos positivos
-        # Aseguramos que la ruta comience con "carpeta_actas/" (o "\" en Windows)
-        # Esto evita que 'uploads/actas_secretas' pase el filtro de 'uploads/actas'
-        carpeta_con_sep = os.path.join(carpeta_actas, '') # Agrega el separador al final (/ o \)
-        
+        # Bloqueo de Path Traversal
         if not path_absoluto.startswith(carpeta_con_sep):
-            registrar_log("Seguridad", f"ALERTA: Intento de Path Traversal por {current_user.email}. Path: {path_absoluto}")
-            abort(403) # Acceso Prohibido
+            registrar_log(
+                "Seguridad",
+                f"ALERTA: Intento de Path Traversal por {current_user.email}. Path: {path_absoluto}"
+            )
+            abort(403)
 
+        # =====================================================
         # 4. VERIFICAR ARCHIVO FÍSICO
+        # =====================================================
         if not os.path.exists(path_absoluto):
-            registrar_log("Error Archivo", f"Acta no encontrada en disco: {path_absoluto}")
+            registrar_log(
+                "Error Archivo",
+                f"Acta no encontrada en disco: {path_absoluto}"
+            )
             flash('El archivo físico del acta no se encuentra en el servidor.', 'danger')
             return redirect(url_for('casos.ver_caso', id=caso.id))
 
-        # AJUSTE 2: Auditoría de la descarga (Trazabilidad)
-        # Registramos quién descargó el archivo y de qué caso antes de enviarlo
+        # =====================================================
+        # 5. AUDITORÍA DE DESCARGA
+        # =====================================================
         registrar_log(
-            "Descarga Acta", 
-            f"Usuario={current_user.email} descargó el acta del Caso={caso.id} - Folio={caso.folio_atencion}"
+            "Descarga Acta",
+            f"Usuario={current_user.email} descargó el acta del "
+            f"Caso={caso.id} - Folio={caso.folio_atencion}"
         )
 
-        # AJUSTE 3: Nombre de archivo amigable para el usuario
-        # Genera "Acta_Cierre_FOLIO.pdf" en lugar de "acta_1_FOLIO.pdf" (interno)
+        # Nombre amigable de descarga
         nombre_descarga = f"Acta_Cierre_{caso.folio_atencion or caso.id}.pdf"
 
-        # 5. SERVIR ARCHIVO
+        # =====================================================
+        # 6. SERVIR ARCHIVO
+        # =====================================================
         return send_file(
             path_absoluto,
             as_attachment=True,
@@ -929,7 +1090,7 @@ def descargar_acta(id):
 def exportar_excel():
     """
     Genera y descarga un reporte Excel (.xlsx) de los casos filtrados.
-    Reutiliza la MISMA lógica de seguridad y filtros que el index.
+    Adaptado para asignación dual y nuevos roles (Fase 6).
     """
     # 1. Recuperar filtros de la URL (igual que en index)
     search_query = request.args.get('search', '').strip()
@@ -940,8 +1101,11 @@ def exportar_excel():
     # 2. Construir Filtros de Seguridad (Base Query)
     filters = []
 
-    if rol_nombre == 'Admin':
-        pass
+    # A) Acceso Global
+    if rol_nombre in ['Admin', 'Torre Control', 'Coordinador EPI']:
+        pass 
+        
+    # B) Acceso por Ciclo (Referente / Visualizador)
     elif rol_nombre in ['Referente', 'Visualizador']:
         ciclos_permitidos = []
 
@@ -956,10 +1120,19 @@ def exportar_excel():
         if ciclos_permitidos:
             filters.append(Caso.ciclo_vital_id.in_(ciclos_permitidos))
         else:
-            # sin ciclo = global (no filtra)
-            pass
-    elif rol_nombre == 'Funcionario':
-        filters.append(Caso.asignado_a_usuario_id == current_user.id)
+            pass # Si no tiene ciclo, asume global o vacío según regla de negocio
+            
+    # C) Acceso TS (Gestor) - Migración Segura
+    elif rol_nombre == 'Trabajador(a) Social':
+        filters.append(or_(
+            Caso.asignado_ts_id == current_user.id,
+            Caso.asignado_a_usuario_id == current_user.id
+        ))
+        
+    # D) Acceso Coordinador Ciclo
+    elif rol_nombre == 'Coordinador Ciclo':
+        filters.append(Caso.asignado_coord_id == current_user.id)
+        
     else:
         abort(403)
 
@@ -997,7 +1170,7 @@ def exportar_excel():
     ws = wb.active
     ws.title = "Reporte de Casos"
 
-    # Definir Encabezados
+    # Definir Encabezados (Actualizado para Dual)
     headers = [
         "Fecha Ingreso", 
         "Folio", 
@@ -1009,7 +1182,8 @@ def exportar_excel():
         "Ciclo Vital", 
         "Recinto Notifica", 
         "Recinto Inscrito",
-        "Asignado A",
+        "Trabajador Social",   # Nueva Columna
+        "Coordinador Ciclo",   # Nueva Columna
         "Fecha Cierre"
     ]
 
@@ -1040,8 +1214,16 @@ def exportar_excel():
         doc_tipo = caso.paciente_doc_tipo or "RUT"
         doc_num = caso.paciente_doc_numero or caso.origen_rut or "S/I"
 
-        # Asignado
-        asignado = caso.asignado_a.nombre_completo if caso.asignado_a else "Sin Asignar"
+        # --- Lógica Dual para Excel ---
+        # 1. Trabajador Social (Prioriza columna nueva, fallback a legacy)
+        nombre_ts = "Sin Asignar"
+        if caso.asignado_ts:
+            nombre_ts = caso.asignado_ts.nombre_completo
+        elif caso.asignado_a:
+            nombre_ts = caso.asignado_a.nombre_completo
+            
+        # 2. Coordinador
+        nombre_coord = caso.asignado_coord.nombre_completo if caso.asignado_coord else "Sin Asignar"
 
         # Recintos
         recinto_notifica = caso.recinto_notifica.nombre if caso.recinto_notifica else "Desconocido"
@@ -1068,21 +1250,24 @@ def exportar_excel():
             caso.ciclo_vital.nombre,
             recinto_notifica,
             recinto_inscrito,
-            asignado,
+            nombre_ts,      # Columna TS
+            nombre_coord,   # Columna Coord
             fecha_cierre
         ]
         ws.append(row)
 
     # 6. Formato Final (AutoFilter, Congelar Panel, Anchos)
-    
+
     # Agregar AutoFilter
     ws.auto_filter.ref = ws.dimensions
-
+    
     # Congelar primera fila
     ws.freeze_panes = "A2"
 
-    # Ajustar ancho de columnas (Estimación decente)
-    column_widths = [18, 10, 15, 10, 15, 30, 10, 15, 30, 30, 20, 18]
+    # Ajustar anchos (Agregamos una columna más, ajustamos índices)
+    # Indices: Fec, Fol, Est, Tip, Num, Pac, Eda, Cic, Not, Ins, TS,  Coo, Cie
+    column_widths = [18, 10, 15, 8,  12,  30,  8,   15,  25,  25,  25,  25,  18]
+    
     for i, width in enumerate(column_widths, 1):
         col_letter = get_column_letter(i)
         ws.column_dimensions[col_letter].width = width
@@ -1106,13 +1291,13 @@ def exportar_excel():
 def enviar_reporte_masivo():
     """
     Calcula estadísticas globales y las envía por correo a todos los usuarios activos.
-    Solo para Admin y Referentes.
+    Solo para Admin y Torre Control.
     Incluye tablas:
     - Resumen por Recinto (Inscritos) con estados
     - Resumen de Notificaciones (Origen) con % del total
     """
     # 1) Validar permiso
-    if current_user.rol.nombre not in ['Admin', 'Referente']:
+    if current_user.rol.nombre not in ['Admin', 'Torre Control']:
         flash("No tiene permisos para realizar esta acción.", "danger")
         return redirect(url_for('casos.index'))
 

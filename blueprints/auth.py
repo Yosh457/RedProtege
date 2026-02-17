@@ -35,7 +35,7 @@ def obtener_ruta_redireccion(usuario):
     if usuario.rol.nombre == 'Solicitante':
         return url_for('solicitudes.formulario')
     
-    # 3. Referente, Funcionario, Visualizador -> Bandeja de Casos
+    # 3. Referente, Torre Control, Coordinador EPI, Trabajador(a) Social, Coordinador Ciclo, Visualizador -> Bandeja de Casos
     return url_for('casos.index')
 
 # --- RUTAS DE AUTENTICACIÓN ---
