@@ -175,13 +175,15 @@ def ver_logs():
     pagination = query.paginate(page=page, per_page=15, error_out=False)
     todos_los_usuarios = Usuario.query.order_by(Usuario.nombre_completo).all()
     # Acciones comunes en RedProtege
-    acciones_posibles = ["Inicio de Sesión", "Cierre de Sesión", "Creación Usuario", 
-                         "Edición Usuario", "Cambio Estado", "Cambio de Clave", 
-                         "Ingreso Caso", "Bloqueo Caso", "Desbloqueo Caso",
-                         "Login Fallido", "Solicitud Reseteo", "Solicitud Reseteo Fallida",
-                         "Recuperación Clave", "Asignación Caso", "Cierre Caso",
-                         "Email Asignación", "Error Email", "Error Crítico Email",
-                         "Seguridad", "Error Archivo", "Descargar Acta"]
+    acciones_posibles = ["Inicio de Sesión", "Cierre de Sesión", "Cierre de Sesión Automático", 
+                         "Creación Usuario", "Edición Usuario", "Cambio Estado", 
+                         "Cambio de Clave", "Ingreso Caso", "Bloqueo Caso", 
+                         "Desbloqueo Caso", "Login Fallido", "Solicitud Reseteo", 
+                         "Solicitud Reseteo Fallida", "Recuperación Clave", "Asignación Dual", 
+                         "Cierre Caso", "Email Asignación", "Error Email", 
+                         "Error Archivo", "Seguridad", "Error Archivo", 
+                         "Descargar Acta", "Reporte Masivo", "Subrogancia", 
+                         "Seguridad", "Descarga Acta"]
 
     return render_template('admin/ver_logs.html', pagination=pagination,
                            todos_los_usuarios=todos_los_usuarios,

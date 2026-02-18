@@ -77,6 +77,52 @@
     </footer>
 
     <script src="{{ url_for('static', filename='js/flash_messages.js') }}"></script>
+
+    {# --- NUEVO: MODAL DE INACTIVIDAD (Solo si está logueado) --- #}
+    {% if current_user.is_authenticated %}
+    <div id="modal-inactividad" class="fixed inset-0 z-[9999] hidden">
+        <div class="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+
+        <div class="relative min-h-screen flex items-center justify-center p-4">
+            <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
+
+                <div class="px-6 py-6 text-center border-b border-gray-100">
+                    <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-amber-100 mb-4 animate-pulse">
+                        <svg class="h-8 w-8 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+
+                    <h3 class="text-xl font-bold text-gray-900">
+                        Tu sesión está a punto de expirar
+                    </h3>
+
+                    <p class="text-sm text-gray-500 mt-2">
+                        Hemos detectado inactividad. Por seguridad, tu sesión se cerrará automáticamente en:
+                    </p>
+
+                    <!-- CONTADOR REGRESIVO -->
+                    <p id="contador-expiracion"
+                    class="mt-2 text-lg font-semibold text-amber-600">
+                        00:00
+                    </p>
+                </div>
+
+                <div class="px-6 py-4 bg-gray-50 flex justify-center">
+                    <button id="btn-mantener-sesion"
+                            class="w-full px-4 py-3 rounded-xl text-white bg-blue-600 hover:bg-blue-700 shadow-lg transition">
+                        Permanecer Conectado
+                    </button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/session_timeout.js') }}"></script>
+    {% endif %}
+
     {% block scripts %}{% endblock %}
 
 </body>

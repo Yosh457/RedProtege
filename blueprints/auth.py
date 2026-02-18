@@ -78,12 +78,32 @@ def login():
     
     return render_template('auth/login.html')
 
+from flask import request, redirect, url_for, flash
+from flask_login import logout_user, login_required
+
 @auth_bp.route('/logout')
 @login_required
 def logout():
-    registrar_log("Cierre de Sesión", "Usuario salió del sistema.")
+    reason = request.args.get('reason')
+
+    if reason == 'timeout':
+        registrar_log(
+            "Cierre de Sesión Automático",
+            "Sesión cerrada por inactividad del usuario."
+        )
+        mensaje = 'Su sesión ha expirado por inactividad. Por favor, ingrese nuevamente.'
+        categoria = 'warning'
+    else:
+        registrar_log(
+            "Cierre de Sesión",
+            "Usuario salió del sistema manualmente."
+        )
+        mensaje = 'Has cerrado sesión correctamente.'
+        categoria = 'success'
+
     logout_user()
-    flash('Has cerrado sesión correctamente.', 'success')
+    flash(mensaje, categoria)
+
     return redirect(url_for('auth.login'))
 
 @auth_bp.route('/cambiar_clave', methods=['GET', 'POST'])

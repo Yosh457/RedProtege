@@ -61,7 +61,7 @@ def create_app():
     from blueprints.casos import casos_bp
     app.register_blueprint(casos_bp)
 
-    # Blueprint Formulario Público
+    # Blueprint Formulario de Ingreso de Casos (Solicitante)
     from blueprints.solicitudes import solicitudes_bp
     app.register_blueprint(solicitudes_bp)
 
@@ -73,7 +73,7 @@ def create_app():
     # --- ERRORES Y CACHÉ ---
     @app.errorhandler(CSRFError)
     def handle_csrf_error(e):
-        flash('La sesión expiró. Intenta enviar el formulario de nuevo.', 'warning')
+        flash('La sesión expiró. Ingrese nuevamente.', 'warning')
         return redirect(url_for('auth.login'))
     
     @app.after_request
