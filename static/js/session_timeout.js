@@ -22,10 +22,10 @@
      * ===================================================== */
 
     // Tiempo sin actividad para mostrar advertencia
-    const TIEMPO_ADVERTENCIA = 1 * 60 * 1000; // 8 minutos
+    const TIEMPO_ADVERTENCIA = 8 * 60 * 1000; // 8 minutos
 
     // Tiempo total antes de cerrar sesión
-    const TIEMPO_MAXIMO = 2 * 60 * 1000;     // 10 minutos
+    const TIEMPO_MAXIMO = 10 * 60 * 1000;     // 10 minutos
 
     // Tiempo del contador (derivado automáticamente)
     const TIEMPO_CONTADOR = (TIEMPO_MAXIMO - TIEMPO_ADVERTENCIA) / 1000;
