@@ -187,12 +187,22 @@ def enviar_aviso_asignacion(funcionario, caso, asignador):
 def enviar_aviso_nuevo_caso(caso, usuario_ingreso):
     # Lazy Import para evitar ciclos
     from models import Usuario, Rol
+    from sqlalchemy import or_
     
-    referentes = Usuario.query.join(Rol).filter(Rol.nombre == 'Referente', Usuario.activo == True).filter(
-        (Usuario.ciclo_asignado_id == caso.ciclo_vital_id) | (Usuario.ciclo_asignado_id == None)
+    # 🔥 ARQUITECTURA CORREGIDA:
+    # Notificar a los Referentes del Ciclo Vital correspondiete,
+    # Y a TODOS los usuarios con rol 'Torre Control' globalmente.
+    destinatarios_query = Usuario.query.join(Rol).filter(
+        Usuario.activo == True,
+        Usuario.email.isnot(None),
+        Usuario.email != '',
+        or_(
+            (Rol.nombre == 'Referente') & (Usuario.ciclo_asignado_id == caso.ciclo_vital_id),
+            Rol.nombre == 'Torre Control'
+        )
     ).all()
     
-    destinatarios = list(set([u.email for u in referentes if u.email]))
+    destinatarios = list(set([u.email.strip() for u in destinatarios_query if u.email and u.email.strip()]))
     if not destinatarios: return
 
     url = url_for('casos.ver_caso', id=caso.id, _external=True)
@@ -222,18 +232,29 @@ def enviar_aviso_cierre(caso, funcionario_cierre):
     Notifica cierre al referente y al funcionario
     """
     from models import Usuario, Rol
+    from sqlalchemy import or_
     
     # Destinatarios: Funcionario que cierra + Referentes del ciclo
     destinatarios = []
+
+    # 1. El funcionario que cerró
     if funcionario_cierre.email:
-        destinatarios.append(funcionario_cierre.email)
+        destinatarios.append(funcionario_cierre.email.strip())
     
-    referentes = Usuario.query.join(Rol).filter(Rol.nombre == 'Referente', Usuario.activo == True).filter(
-        (Usuario.ciclo_asignado_id == caso.ciclo_vital_id) | (Usuario.ciclo_asignado_id == None)
+    # 2. 🔥 ARQUITECTURA CORREGIDA: Referentes del ciclo + Torre Control
+    monitores = Usuario.query.join(Rol).filter(
+        Usuario.activo == True,
+        Usuario.email.isnot(None),
+        Usuario.email != '',
+        or_(
+            (Rol.nombre == 'Referente') & (Usuario.ciclo_asignado_id == caso.ciclo_vital_id),
+            Rol.nombre == 'Torre Control'
+        )
     ).all()
     
-    for r in referentes:
-        if r.email: destinatarios.append(r.email)
+    for m in monitores:
+        if m.email and m.email.strip():
+            destinatarios.append(m.email.strip())
     
     destinatarios = list(set(destinatarios)) # Únicos
 

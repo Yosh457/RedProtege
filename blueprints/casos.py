@@ -372,9 +372,8 @@ def ver_caso(id):
     funcionarios_ts = []
     funcionarios_coord = []
 
-    # Solo Admin y Referente pueden asignar. 
-    # Torre Control ve pero NO asigna (según matriz).
-    puede_asignar = rol_nombre in ['Admin', 'Referente']
+    # 🔥 CAMBIO AQUÍ: Agregamos a 'Torre Control' a la lista de los que pueden asignar
+    puede_asignar = rol_nombre in ['Admin', 'Referente', 'Torre Control']
 
     if puede_asignar and caso.estado != 'CERRADO':
         
@@ -389,7 +388,7 @@ def ver_caso(id):
             Usuario.activo == True
         )
 
-        # Filtro por Ciclo (Si es Referente)
+        # Filtro por Ciclo (SOLO si es Referente. Admin y Torre Control ven a todos)
         if rol_nombre == 'Referente':
             # Solo mostrar profesionales del ciclo del CASO
             q_ts = q_ts.filter(Usuario.ciclo_asignado_id == caso.ciclo_vital_id)
