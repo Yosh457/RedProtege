@@ -17,11 +17,15 @@
             <div class="space-y-6">
                 <div>
                     <label for="nombre_completo" class="block text-sm font-bold text-gray-700 mb-1">Nombre Completo</label>
-                    <input type="text" name="nombre_completo" value="{{ usuario.nombre_completo }}" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required>
+                    <input type="text" name="nombre_completo" 
+                           value="{{ datos_previos.nombre_completo if datos_previos else usuario.nombre_completo }}" 
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required>
                 </div>
                 <div>
                     <label for="email" class="block text-sm font-bold text-gray-700 mb-1">Correo Electrónico</label>
-                    <input type="email" name="email" value="{{ usuario.email }}" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required>
+                    <input type="email" name="email" 
+                           value="{{ datos_previos.email if datos_previos else usuario.email }}" 
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required>
                 </div>
             </div>
 
@@ -29,21 +33,22 @@
                 <div>
                     <label for="rol_id" class="block text-sm font-bold text-gray-700 mb-1">Rol</label>
                     <select name="rol_id" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white" required>
+                        {% set selected_rol = (datos_previos.rol_id if datos_previos else usuario.rol_id|string) %}
                         {% for rol in roles %}
-                            <option value="{{ rol.id }}" {% if rol.id == usuario.rol_id %}selected{% endif %}>
+                            <option value="{{ rol.id }}" {% if rol.id|string == selected_rol %}selected{% endif %}>
                                 {{ rol.nombre }}
                             </option>
                         {% endfor %}
                     </select>
                 </div>
 
-                {# --- SELECTOR CICLO VITAL (Propio de RedProtege) --- #}
                 <div>
                     <label for="ciclo_id" class="block text-sm font-bold text-gray-700 mb-1">Ciclo Vital Asignado</label>
                     <select name="ciclo_id" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
                         <option value="">-- Ninguno (Vista Global) --</option>
+                        {% set selected_ciclo = (datos_previos.ciclo_id if datos_previos else (usuario.ciclo_asignado_id|string if usuario.ciclo_asignado_id else '')) %}
                         {% for ciclo in ciclos %}
-                            <option value="{{ ciclo.id }}" {% if usuario.ciclo_asignado_id == ciclo.id %}selected{% endif %}>
+                            <option value="{{ ciclo.id }}" {% if ciclo.id|string == selected_ciclo %}selected{% endif %}>
                                 {{ ciclo.nombre }}
                             </option>
                         {% endfor %}
@@ -55,12 +60,12 @@
                     <input type="password" name="password" placeholder="Dejar en blanco para mantener la actual" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
                 </div>
 
-                {# --- CHECKBOX ESTILIZADO (Igual a Repositorio) --- #}
                 <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 flex items-start gap-3">
                     <div class="flex items-center h-5">
+                        {% set forzar_cambio = (datos_previos.get('forzar_cambio_clave') == '1') if datos_previos else usuario.cambio_clave_requerido %}
                         <input type="checkbox" name="forzar_cambio_clave" value="1" id="forzar_cambio_clave" 
                                class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                               {% if usuario.cambio_clave_requerido %}checked{% endif %}>
+                               {% if forzar_cambio %}checked{% endif %}>
                     </div>
                     <div class="text-sm">
                         <label for="forzar_cambio_clave" class="font-bold text-gray-700 cursor-pointer select-none">Forzar cambio de contraseña</label>

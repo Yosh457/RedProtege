@@ -67,7 +67,7 @@ def crear_usuario():
         ciclo_id = request.form.get('ciclo_id') # Puede venir vacío
         forzar_cambio = request.form.get('forzar_cambio_clave') == '1'
 
-        # Validación básica
+        # Validación básica: Si falla, devolvemos los datos_previos para no perder lo ingresado
         if Usuario.query.filter_by(email=email).first():
             flash('Error: El correo ya está registrado.', 'danger')
             return render_template('admin/crear_usuario.html', roles=roles, ciclos=ciclos, datos_previos=request.form)
@@ -102,8 +102,9 @@ def crear_usuario():
         except Exception as e:
             db.session.rollback()
             flash(f'Error al crear usuario: {str(e)}', 'danger')
+            return render_template('admin/crear_usuario.html', roles=roles, ciclos=ciclos, datos_previos=request.form)
 
-    return render_template('admin/crear_usuario.html', roles=roles, ciclos=ciclos)
+    return render_template('admin/crear_usuario.html', roles=roles, ciclos=ciclos, datos_previos=None)
 
 @admin_bp.route('/editar_usuario/<int:id>', methods=['GET', 'POST'])
 def editar_usuario(id):
@@ -118,7 +119,7 @@ def editar_usuario(id):
         usuario_existente = Usuario.query.filter_by(email=email_nuevo).first()
         if usuario_existente and usuario_existente.id != id:
             flash('Error: Ese correo ya pertenece a otro usuario.', 'danger')
-            return render_template('admin/editar_usuario.html', usuario=usuario, roles=roles, ciclos=ciclos)
+            return render_template('admin/editar_usuario.html', usuario=usuario, roles=roles, ciclos=ciclos, datos_previos=request.form)
 
         usuario.nombre_completo = request.form.get('nombre_completo')
         usuario.email = email_nuevo
@@ -142,8 +143,9 @@ def editar_usuario(id):
         except Exception as e:
             db.session.rollback()
             flash(f'Error al actualizar: {str(e)}', 'danger')
+            return render_template('admin/editar_usuario.html', usuario=usuario, roles=roles, ciclos=ciclos, datos_previos=request.form)
 
-    return render_template('admin/editar_usuario.html', usuario=usuario, roles=roles, ciclos=ciclos)
+    return render_template('admin/editar_usuario.html', usuario=usuario, roles=roles, ciclos=ciclos, datos_previos=None)
 
 @admin_bp.route('/toggle_activo/<int:id>', methods=['POST'])
 def toggle_activo(id):

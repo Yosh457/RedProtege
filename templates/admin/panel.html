@@ -35,59 +35,75 @@
             </div>
         </div>
 
-        {# Formulario de Filtros (Igual a tu estándar) #}
+        {# Formulario de Filtros (Con botón Limpiar) #}
         <form method="get" action="{{ url_for('admin.panel') }}" class="bg-gray-50 p-4 rounded-lg mb-6 grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div>
-                <label class="block text-sm font-medium text-gray-700">Buscar:</label>
-                <input type="text" name="busqueda" value="{{ busqueda }}" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                <label class="block text-sm font-medium text-gray-700">Buscar (Nombre/Email):</label>
+                <input type="text" name="busqueda" value="{{ busqueda }}" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500">
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700">Rol:</label>
-                <select name="rol_filtro" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                <select name="rol_filtro" class="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:ring-blue-500">
                     <option value="">Todos</option>
                     {% for rol in roles_para_filtro %}
                         <option value="{{ rol.id }}" {% if rol.id == rol_filtro|int %}selected{% endif %}>{{ rol.nombre }}</option>
                     {% endfor %}
                 </select>
             </div>
-            <button type="submit" class="btn btn-primary w-full">Filtrar</button>
+            <div class="flex gap-2">
+                <a href="{{ url_for('admin.panel') }}" class="btn btn-secondary w-1/3 text-center">Limpiar</a>
+                <button type="submit" class="btn btn-primary w-2/3">Filtrar</button>
+            </div>
         </form>
 
         <div class="overflow-x-auto">
             <table class="min-w-full bg-white">
                 <thead class="bg-gray-100">
                     <tr>
-                        <th class="py-3 px-4 text-left text-sm font-semibold">Nombre</th>
-                        <th class="py-3 px-4 text-left text-sm font-semibold">Email</th>
+                        <th class="py-3 px-4 text-left text-sm font-semibold">Usuario</th>
                         <th class="py-3 px-4 text-left text-sm font-semibold">Rol</th>
                         <th class="py-3 px-4 text-left text-sm font-semibold">Ciclo Asignado</th>
+                        <th class="py-3 px-4 text-center text-sm font-semibold">Estado</th>
                         <th class="py-3 px-4 text-center text-sm font-semibold">Acciones</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for usuario in pagination.items %}
-                    <tr class="border-b hover:bg-gray-50">
-                        <td class="py-3 px-4">{{ usuario.nombre_completo }}</td>
-                        <td class="py-3 px-4">{{ usuario.email }}</td>
+                    <tr class="border-b hover:bg-gray-50 transition">
                         <td class="py-3 px-4">
-                            <span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">{{ usuario.rol.nombre }}</span>
+                            <div class="font-medium text-gray-800">{{ usuario.nombre_completo }}</div>
+                            <div class="text-xs text-gray-500">{{ usuario.email }}</div>
+                        </td>
+                        <td class="py-3 px-4">
+                            <span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded font-bold">{{ usuario.rol.nombre }}</span>
                         </td>
                         <td class="py-3 px-4">
                             {% if usuario.ciclo_asignado %}
-                                <span class="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded">{{ usuario.ciclo_asignado.nombre }}</span>
+                                <span class="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded font-bold">{{ usuario.ciclo_asignado.nombre }}</span>
                             {% else %}
                                 <span class="text-gray-400 text-xs italic">Global / Sin asignar</span>
                             {% endif %}
                         </td>
+                        <td class="py-3 px-4 text-center">
+                            {% if usuario.activo %}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Activo</span>
+                            {% else %}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Inactivo</span>
+                            {% endif %}
+                        </td>
                         <td class="py-3 px-4 text-center flex justify-center gap-2">
-                            <a href="{{ url_for('admin.editar_usuario', id=usuario.id) }}" class="btn btn-secondary text-xs">Editar</a>
-                            <form action="{{ url_for('admin.toggle_activo', id=usuario.id) }}" method="POST">
+                            <a href="{{ url_for('admin.editar_usuario', id=usuario.id) }}" class="btn btn-secondary text-xs flex items-center justify-center">Editar</a>
+                            <form action="{{ url_for('admin.toggle_activo', id=usuario.id) }}" method="POST" class="inline m-0">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-                                <button type="submit" class="btn {% if usuario.activo %}btn-warning{% else %}btn-primary{% endif %} text-xs">
-                                    {{ 'Desactivar' if usuario.activo else 'Activar' }}
+                                <button type="submit" class="btn {% if usuario.activo %}btn-warning{% else %}btn-primary{% endif %} text-xs flex justify-center items-center">
+                                    {{ 'Bloquear' if usuario.activo else 'Activar' }}
                                 </button>
                             </form>
                         </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="text-center py-8 text-gray-500">No se encontraron usuarios.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
