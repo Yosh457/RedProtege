@@ -377,7 +377,7 @@ def ver_caso(id):
 
     if puede_asignar and caso.estado != 'CERRADO':
         
-        # A) Cargar Trabajadores Sociales (ex Funcionarios)
+        # A) Cargar Trabajadores Sociales (Globales)
         q_ts = Usuario.query.join(Rol).filter(
             Rol.nombre == 'Trabajador(a) Social',
             Usuario.activo == True
@@ -390,8 +390,10 @@ def ver_caso(id):
 
         # Filtro por Ciclo (SOLO si es Referente. Admin y Torre Control ven a todos)
         if rol_nombre == 'Referente':
-            # Solo mostrar profesionales del ciclo del CASO
-            q_ts = q_ts.filter(Usuario.ciclo_asignado_id == caso.ciclo_vital_id)
+            # 🔥 CAMBIO AQUÍ: Ya NO filtramos q_ts por el ciclo del caso. 
+            # Los Trabajadores Sociales son un recurso global/transversal.
+            
+            # Mantenemos el filtro solo para el Coordinador de Ciclo:
             q_coord = q_coord.filter(Usuario.ciclo_asignado_id == caso.ciclo_vital_id)
 
         funcionarios_ts = q_ts.order_by(Usuario.nombre_completo).all()
@@ -438,9 +440,8 @@ def ver_caso(id):
                     flash('Trabajador Social se encuentra inactivo.', 'danger')
                     return redirect(url_for('casos.ver_caso', id=caso.id))
 
-                if rol_nombre == 'Referente' and user_ts.ciclo_asignado_id != caso.ciclo_vital_id:
-                    flash('El TS no pertenece al ciclo del caso.', 'danger')
-                    return redirect(url_for('casos.ver_caso', id=caso.id))
+                # 🔥 CAMBIO AQUÍ: Eliminamos la validación que bloqueaba la asignación
+                # si el TS no pertenecía al ciclo del caso.
 
                 # Solo continuar si realmente cambió
                 if ts_id != prev_ts_id:
@@ -613,14 +614,16 @@ def gestionar_caso(id):
 
     # 1. Validar Permisos para GESTIONAR (Más estricto que ver)
     puede_gestionar = False
-    if rol_nombre == 'Admin':
+
+    # 🔥 CAMBIO: Agregamos a 'Torre Control' junto al Admin
+    if rol_nombre in ['Admin', 'Torre Control']:
         puede_gestionar = True
     elif rol_nombre == 'Trabajador(a) Social':
         # Validar asignación (Dual: nueva o legacy)
         if (caso.asignado_ts_id == current_user.id) or (caso.asignado_a_usuario_id == current_user.id):
             puede_gestionar = True
     
-    # Referente, Coordinador Ciclo, Torre Control: solo visualizan, no gestionan
+    # Referente, Coordinador Ciclo: solo visualizan, no gestionan
     if not puede_gestionar:
         flash('No tienes permisos para gestionar este caso.', 'danger')
         return redirect(url_for('casos.ver_caso', id=caso.id))
@@ -884,7 +887,9 @@ def cerrar_caso(id):
 
     # 1. Validar Permisos (Admin o Trabajador Social Asignado)
     puede_cerrar = False
-    if rol_nombre == 'Admin':
+    
+    # 🔥 CAMBIO: Agregamos a 'Torre Control' junto al Admin
+    if rol_nombre in ['Admin', 'Torre Control']:
         puede_cerrar = True
     elif rol_nombre == 'Trabajador(a) Social':
         # Validar asignación dual (nuevo o legacy)

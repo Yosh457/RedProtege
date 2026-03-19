@@ -440,7 +440,9 @@
                 {# PERMISOS PARA BOTÓN "INGRESAR GESTIÓN" #}
                 {# Admin siempre puede. Trabajador Social solo si es el asignado. #}
                 {% set puede_gestionar = False %}
-                {% if rol == 'Admin' %}
+                
+                {# 🔥 CAMBIO: Evaluamos Admin y Torre Control #}
+                {% if rol in ['Admin', 'Torre Control'] %}
                     {% set puede_gestionar = True %}
                 {% elif rol == 'Trabajador(a) Social' %}
                     {% if (caso.asignado_ts_id == current_user.id) or (caso.asignado_a_usuario_id == current_user.id) %}
