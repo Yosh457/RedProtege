@@ -239,7 +239,8 @@ class Caso(db.Model):
 
     acciones_realizadas = db.Column(db.Text)
 
-    estado = db.Column(db.Enum('PENDIENTE_RESCATAR', 'EN_SEGUIMIENTO', 'CERRADO'), 
+    # Estado lógico del caso (soft delete funcional para duplicados/errores)
+    estado = db.Column(db.Enum('PENDIENTE_RESCATAR', 'EN_SEGUIMIENTO', 'CERRADO', 'ANULADO'), 
                        default='PENDIENTE_RESCATAR', nullable=False, index=True)
     
     bloqueado = db.Column(db.Boolean, default=False)
@@ -314,6 +315,13 @@ class AuditoriaCaso(db.Model):
                 'color_text': 'text-red-600',
                 'icono': 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z', # Lock
                 'titulo': 'Cierre del Caso'
+            }
+        elif self.accion == 'ANULACION_CASO':
+            config = {
+                'color_bg': 'bg-gray-200',
+                'color_text': 'text-gray-700',
+                'icono': 'M6 18L18 6M6 6l12 12', # X / Anulación
+                'titulo': 'Anulación del Caso'
             }
         elif 'EMAIL' in self.accion:
             config = {

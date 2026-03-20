@@ -163,29 +163,63 @@ def toggle_activo(id):
 
 @admin_bp.route('/ver_logs')
 def ver_logs():
+    # Página actual de la paginación
     page = request.args.get('page', 1, type=int)
+
+    # Filtros opcionales enviados por GET
     usuario_filtro = request.args.get('usuario_id')
     accion_filtro = request.args.get('accion')
 
+    # Query base: logs ordenados del más reciente al más antiguo
     query = Log.query.order_by(Log.timestamp.desc())
 
+    # =========================================================
+    # FILTRO POR USUARIO
+    # =========================================================
+    # Validamos que venga un ID numérico antes de filtrar
     if usuario_filtro and usuario_filtro.isdigit():
         query = query.filter(Log.usuario_id == int(usuario_filtro))
+
+    # =========================================================
+    # FILTRO POR ACCIÓN
+    # =========================================================
     if accion_filtro:
         query = query.filter(Log.accion == accion_filtro)
-
+    
+    # =========================================================
+    # PAGINACIÓN
+    # =========================================================
     pagination = query.paginate(page=page, per_page=15, error_out=False)
+
+    # Lista de usuarios para poblar el select del filtro
     todos_los_usuarios = Usuario.query.order_by(Usuario.nombre_completo).all()
-    # Acciones comunes en RedProtege
-    acciones_posibles = ["Inicio de Sesión", "Cierre de Sesión", "Cierre de Sesión Automático", 
-                         "Creación Usuario", "Edición Usuario", "Cambio Estado", 
-                         "Cambio de Clave", "Ingreso Caso", "Bloqueo Caso", 
-                         "Desbloqueo Caso", "Login Fallido", "Solicitud Reseteo", 
-                         "Solicitud Reseteo Fallida", "Recuperación Clave", "Asignación Dual", 
-                         "Cierre Caso", "Email Asignación", "Error Email", 
-                         "Error Archivo", "Seguridad", "Error Archivo", 
-                         "Descargar Acta", "Reporte Masivo", "Subrogancia", 
-                         "Seguridad", "Descarga Acta"]
+    
+    # =========================================================
+    # ACCIONES POSIBLES
+    # =========================================================
+    acciones_posibles = [
+        "Inicio de Sesión",
+        "Cierre de Sesión",
+        "Cierre de Sesión Automático",
+        "Login Fallido",
+        "Cambio de Clave",
+        "Solicitud Reseteo",
+        "Solicitud Reseteo Fallida",
+        "Recuperación Clave",
+        "Creación Usuario",
+        "Edición Usuario",
+        "Cambio Estado",
+        "Ingreso Caso",
+        "Asignación Dual",
+        "Cierre Caso",
+        "Anulación Caso",
+        "Descarga Acta",
+        "Reporte Masivo",
+        "Subrogancia",
+        "Error Email",
+        "Error Archivo",
+        "Seguridad"
+    ]
 
     return render_template('admin/ver_logs.html', pagination=pagination,
                            todos_los_usuarios=todos_los_usuarios,

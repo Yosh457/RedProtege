@@ -144,13 +144,13 @@ def index():
     # Ignoran filtros de búsqueda/estado, muestran la "realidad total" del usuario
     # =========================================================
     
-    # 1. KPIs Generales
+    # 1. KPIs Generales (Excluyendo Anulados)
     stats_query = db.session.query(
         func.count(Caso.id).label('total'),
         func.sum(case((Caso.estado == 'PENDIENTE_RESCATAR', 1), else_=0)).label('pendientes'),
         func.sum(case((Caso.estado == 'EN_SEGUIMIENTO', 1), else_=0)).label('seguimiento'),
         func.sum(case((Caso.estado == 'CERRADO', 1), else_=0)).label('cerrados')
-    ).filter(*filters)
+    ).filter(*filters, Caso.estado != 'ANULADO')  # Excluir anulados del conteo general
     
     stats_result = stats_query.first()
     
@@ -173,6 +173,7 @@ def index():
     # Filtramos por fecha >= inicio Y filtros de seguridad
     weekly_raw = db.session.query(Caso.fecha_ingreso).filter(
         Caso.fecha_ingreso >= fecha_inicio,
+        Caso.estado != 'ANULADO',  # Excluir anulados del gráfico semanal
         *filters
     ).all()
 
@@ -211,7 +212,7 @@ def index():
         CatalogoRecinto.nombre,
         func.count(Caso.id).label('count')
     ).join(Caso.recinto_notifica)\
-     .filter(*filters)\
+     .filter(*filters, Caso.estado != 'ANULADO')\
      .group_by(CatalogoRecinto.nombre)\
      .order_by(func.count(Caso.id).desc()).all()
 
@@ -246,7 +247,7 @@ def index():
         CatalogoEstablecimiento.nombre,
         func.count(Caso.id).label('count')
     ).join(Caso.recinto_inscrito)\
-     .filter(*filters)\
+     .filter(*filters, Caso.estado != 'ANULADO')\
      .group_by(CatalogoEstablecimiento.nombre)\
      .order_by(func.count(Caso.id).desc())\
      .limit(5).all()
@@ -297,8 +298,11 @@ def index():
         ))
 
     # Filtro Estado
+    # Si NO filtran por estado, ocultamos anulados por defecto de la bandeja principal.
     if estado_filter:
         tabla_query = tabla_query.filter(Caso.estado == estado_filter)
+    else:
+        tabla_query = tabla_query.filter(Caso.estado != 'ANULADO')
 
     # Ordenamiento
     orden_estado = case(
@@ -375,7 +379,7 @@ def ver_caso(id):
     # 🔥 CAMBIO AQUÍ: Agregamos a 'Torre Control' a la lista de los que pueden asignar
     puede_asignar = rol_nombre in ['Admin', 'Referente', 'Torre Control']
 
-    if puede_asignar and caso.estado != 'CERRADO':
+    if puede_asignar and caso.estado not in ['CERRADO', 'ANULADO']:
         
         # A) Cargar Trabajadores Sociales (Globales)
         q_ts = Usuario.query.join(Rol).filter(
@@ -404,7 +408,7 @@ def ver_caso(id):
     # =========================================================
     if (
         puede_asignar and
-        caso.estado != 'CERRADO' and
+        caso.estado not in ['CERRADO', 'ANULADO'] and
         request.method == 'POST' and
         'asignar_funcionario' in request.form
     ):
@@ -610,6 +614,11 @@ def gestionar_caso(id):
     #Si el caso está cerrado, no se permite gestionar.
     if caso.estado == 'CERRADO':
         flash('El caso ya está cerrado. No es posible editar la gestión.', 'danger')
+        return redirect(url_for('casos.ver_caso', id=caso.id))
+    
+    # Si el caso está anulado, tampoco se permite gestionar.
+    if caso.estado == 'ANULADO':
+        flash('El caso está anulado. No es posible editar la gestión.', 'danger')
         return redirect(url_for('casos.ver_caso', id=caso.id))
 
     # 1. Validar Permisos para GESTIONAR (Más estricto que ver)
@@ -896,13 +905,17 @@ def cerrar_caso(id):
         if (caso.asignado_ts_id == current_user.id) or (caso.asignado_a_usuario_id == current_user.id):
             puede_cerrar = True
     
-    # Torre Control / Coord Ciclo -> NO cierran casos, solo visualizan
+    # Coord Ciclo -> NO cierra caso, solo visualiza
     if not puede_cerrar:
         flash('No tienes permisos para cerrar este caso.', 'danger')
         return redirect(url_for('casos.ver_caso', id=caso.id))
 
     if caso.estado == 'CERRADO':
         flash('El caso ya se encuentra cerrado.', 'warning')
+        return redirect(url_for('casos.ver_caso', id=caso.id))
+    
+    if caso.estado == 'ANULADO':
+        flash('El caso está anulado y no puede cerrarse.', 'warning')
         return redirect(url_for('casos.ver_caso', id=caso.id))
 
     try:
@@ -959,6 +972,68 @@ def cerrar_caso(id):
         flash(f'Error crítico al cerrar el caso: {str(e)}', 'danger')
 
     return redirect(url_for('casos.ver_caso', id=caso.id))
+
+# --- NUEVA RUTA: ANULAR CASO ---
+@casos_bp.route('/anular/<int:id>', methods=['POST'])
+@login_required
+def anular_caso(id):
+    # Anula lógicamente un caso sin borrarlo físicamente de la base de datos.
+    # Se usa para duplicados, ingresos erróneos o registros creados por accidente.
+    caso = Caso.query.get_or_404(id)
+    rol_nombre = current_user.rol.nombre
+
+    # Solo Admin y Torre Control pueden anular
+    if rol_nombre not in ['Admin', 'Torre Control']:
+        flash('No tienes permisos para anular casos.', 'danger')
+        return redirect(url_for('casos.ver_caso', id=caso.id))
+    
+    # Evitamos anular dos veces el mismo caso.
+    if caso.estado == 'ANULADO':
+        flash('El caso ya se encuentra anulado.', 'warning')
+        return redirect(url_for('casos.ver_caso', id=caso.id))
+    
+    # Política recomendada: no permitir anular un caso ya cerrado para no mezclar flujos.
+    if caso.estado == 'CERRADO':
+        flash('Un caso cerrado no puede anularse.', 'warning')
+        return redirect(url_for('casos.ver_caso', id=caso.id))
+
+    motivo = request.form.get('motivo_anulacion', '').strip()
+    if not motivo:
+        flash('Debe ingresar un motivo justificado para anular el caso.', 'warning')
+        return redirect(url_for('casos.ver_caso', id=caso.id))
+
+    try:
+        # Guardamos el estado anterior para auditoría antes de modificarlo.
+        estado_anterior = caso.estado
+
+        # Soft delete funcional: el caso sigue existiendo, pero sale de operación.
+        caso.estado = 'ANULADO'
+
+        # Auditoría
+        audit = AuditoriaCaso(
+            caso_id=caso.id,
+            usuario_id=current_user.id,
+            fecha_movimiento=obtener_hora_chile(),
+            accion='ANULACION_CASO',
+            motivo=motivo,
+            detalles_cambio={
+                'motivo': motivo,
+                'estado_anterior': estado_anterior,
+                'estado_nuevo': 'ANULADO'
+            }
+        )
+        db.session.add(audit)
+        db.session.commit()
+
+        registrar_log("Anulación Caso", f"Caso #{caso.folio_atencion} anulado por {current_user.email}. Motivo: {motivo}")
+        flash('El caso ha sido anulado correctamente y removido de la operación diaria.', 'success')
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error anulando caso: {e}")
+        flash(f'Error crítico al anular el caso: {str(e)}', 'danger')
+
+    return redirect(url_for('casos.index'))
 
 # --- RUTA DESCARGA SEGURA DE ACTA (PRODUCCIÓN) ---
 @casos_bp.route('/acta/<int:id>', methods=['GET'])
@@ -1158,6 +1233,9 @@ def exportar_excel():
 
     if estado_filter:
         query = query.filter(Caso.estado == estado_filter)
+    else:
+        # Por defecto exportamos solo casos activos, alineado con la bandeja.
+        query = query.filter(Caso.estado != 'ANULADO')
 
     # 4. Obtener TODOS los resultados (Sin paginación)
     # Ordenamos igual que la vista: Prioridad Estado -> Fecha
@@ -1312,7 +1390,7 @@ def enviar_reporte_masivo():
             func.sum(case((Caso.estado == 'PENDIENTE_RESCATAR', 1), else_=0)).label('pendientes'),
             func.sum(case((Caso.estado == 'EN_SEGUIMIENTO', 1), else_=0)).label('seguimiento'),
             func.sum(case((Caso.estado == 'CERRADO', 1), else_=0)).label('cerrados')
-        )
+        ).filter(Caso.estado != 'ANULADO')
 
         r = stats_query.first()
         if not r:

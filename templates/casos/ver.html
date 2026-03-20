@@ -15,9 +15,11 @@
                 <span class="px-3 py-1 rounded-full text-sm font-bold
                     {% if caso.estado == 'PENDIENTE_RESCATAR' %}bg-yellow-100 text-yellow-800
                     {% elif caso.estado == 'EN_SEGUIMIENTO' %}bg-blue-100 text-blue-800
+                    {% elif caso.estado == 'ANULADO' %}bg-red-200 text-red-900 line-through
                     {% else %}bg-green-100 text-green-800{% endif %}">
                     {% if caso.estado == 'PENDIENTE_RESCATAR' %}Pendiente rescatar
                     {% elif caso.estado == 'EN_SEGUIMIENTO' %}En seguimiento
+                    {% elif caso.estado == 'ANULADO' %}Anulado
                     {% else %}Cerrado{% endif %}
                 </span>
             </div>
@@ -34,8 +36,18 @@
         <a href="{{ url_for('casos.index') }}" class="btn btn-secondary">Volver a la Bandeja</a>
     </div>
 
-    {# --- BLOQUE DE ASIGNACIÓN DUAL (Solo Admin/Referente y si no está cerrado) --- #}
-    {% if puede_asignar and caso.estado != 'CERRADO' %}
+    {% if caso.estado == 'ANULADO' %}
+    <div class="bg-red-50 border border-red-200 rounded-xl p-6 mb-8 shadow-sm">
+        <h3 class="text-lg font-bold text-red-800 flex items-center gap-2">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+            Caso Anulado
+        </h3>
+        <p class="text-sm text-red-700 mt-2">Este caso fue anulado y excluido de los reportes operativos. Revisa la bitácora para ver el motivo exacto.</p>
+    </div>
+    {% endif %}
+
+    {# --- BLOQUE DE ASIGNACIÓN DUAL (Solo Admin/Referente y si no está cerrado/anulado) --- #}
+    {% if puede_asignar and caso.estado not in ['CERRADO', 'ANULADO'] %}
     <div class="bg-blue-50 border border-blue-200 rounded-xl p-6 mb-8 shadow-sm">
         <h3 class="text-lg font-bold text-blue-800 mb-4 flex items-center gap-2">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -95,7 +107,7 @@
     {% endif %}
 
     {# --- INFO DE ASIGNACIÓN (VISUALIZACIÓN) --- #}
-    {% if not puede_asignar or caso.estado == 'CERRADO' %}
+    {% if not puede_asignar or caso.estado in ['CERRADO', 'ANULADO'] %}
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
         <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
             <span class="block text-xs font-bold text-gray-500 uppercase">Trabajador(a) Social</span>
@@ -436,6 +448,7 @@
 
                 {% set rol = (current_user.rol.nombre if current_user.rol else '') %}
                 {% set es_cerrado = (caso.estado == 'CERRADO') %}
+                {% set es_anulado = (caso.estado == 'ANULADO') %}
                 
                 {# PERMISOS PARA BOTÓN "INGRESAR GESTIÓN" #}
                 {# Admin siempre puede. Trabajador Social solo si es el asignado. #}
@@ -468,6 +481,12 @@
                         </div>
                     {% endif %}
 
+                {% elif es_anulado %}
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800 text-center mb-4">
+                        <p><strong>Caso Anulado</strong></p>
+                        <p class="text-xs mt-1">Este caso fue marcado como duplicado o ingreso erróneo y no admite nuevas gestiones.</p>
+                    </div>
+
                 {% elif puede_gestionar %}
                     <div class="bg-blue-50 border border-blue-100 rounded-lg p-4 text-sm text-blue-800 mb-4">
                         Puedes gestionar este caso. Los datos del formulario son inmutables.
@@ -490,6 +509,88 @@
                         {% if rol == 'Trabajador(a) Social' %}
                             <p class="mt-1 text-xs">Solo el Trabajador Social asignado puede gestionarlo.</p>
                         {% endif %}
+                    </div>
+                {% endif %}
+
+                {% if current_user.rol.nombre in ['Admin', 'Torre Control'] and caso.estado not in ['CERRADO', 'ANULADO'] %}
+                    <div class="mt-6 pt-5 border-t border-gray-200">
+                        <button
+                            type="button"
+                            onclick="document.getElementById('modalAnular').classList.remove('hidden')"
+                            class="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2"
+                        >
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
+                                </path>
+                            </svg>
+                            <span>Anular Ingreso (Duplicado / Error)</span>
+                        </button>
+
+                        <p class="text-xs text-gray-500 text-center mt-2">
+                            Acción exclusiva para Admin y Torre Control.
+                        </p>
+                    </div>
+
+                    <div id="modalAnular" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden flex items-center justify-center z-50 p-4">
+                        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 text-left border border-gray-100">
+                            <div class="flex items-start gap-3 mb-4">
+                                <div class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
+                                        </path>
+                                    </svg>
+                                </div>
+
+                                <div>
+                                    <h3 class="text-lg font-bold text-gray-900">Anular Caso</h3>
+                                    <p class="text-sm text-gray-600 mt-1">
+                                        Esta acción ocultará el caso de la operación diaria y de las estadísticas.
+                                        Úsalo solo para casos duplicados o ingresados por error.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <form action="{{ url_for('casos.anular_caso', id=caso.id) }}" method="POST">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+                                <label for="motivo_anulacion" class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Motivo de anulación
+                                </label>
+
+                                <textarea
+                                    id="motivo_anulacion"
+                                    name="motivo_anulacion"
+                                    rows="4"
+                                    class="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                    placeholder="Escriba el motivo (Ej: Duplicado con el Folio #X)..."
+                                    required
+                                ></textarea>
+
+                                <div class="flex justify-end gap-3 mt-5">
+                                    <button
+                                        type="button"
+                                        onclick="document.getElementById('modalAnular').classList.add('hidden')"
+                                        class="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-bold hover:bg-gray-200 transition"
+                                    >
+                                        Cancelar
+                                    </button>
+
+                                    <button
+                                        type="submit"
+                                        class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-bold hover:bg-red-700 shadow-sm transition"
+                                    >
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M6 18L18 6M6 6l12 12">
+                                            </path>
+                                        </svg>
+                                        Confirmar Anulación
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
                 {% endif %}
 
