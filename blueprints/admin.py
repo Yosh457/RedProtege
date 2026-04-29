@@ -57,7 +57,7 @@ def panel():
 @admin_bp.route('/crear_usuario', methods=['GET', 'POST'])
 def crear_usuario():
     roles = Rol.query.order_by(Rol.nombre).all()
-    ciclos = CatalogoCiclo.query.order_by(CatalogoCiclo.id).all()
+    ciclos_disponibles = CatalogoCiclo.query.order_by(CatalogoCiclo.id).all()
 
     if request.method == 'POST':
         nombre = request.form.get('nombre_completo')
@@ -66,31 +66,39 @@ def crear_usuario():
         rol_id = request.form.get('rol_id')
         ciclo_id = request.form.get('ciclo_id') # Puede venir vacío
         forzar_cambio = request.form.get('forzar_cambio_clave') == '1'
+        
+        # ✅ Convertir a INT correctamente
+        ciclos_ids = [int(c) for c in request.form.getlist('ciclos')]
 
         # Validación básica: Si falla, devolvemos los datos_previos para no perder lo ingresado
         if Usuario.query.filter_by(email=email).first():
             flash('Error: El correo ya está registrado.', 'danger')
-            return render_template('admin/crear_usuario.html', roles=roles, ciclos=ciclos, datos_previos=request.form)
-
-        # Convertir ciclo_id vacío a None para la DB
-        ciclo_final = int(ciclo_id) if ciclo_id else None
+            return render_template('admin/crear_usuario.html', roles=roles, ciclos=ciclos_disponibles, datos_previos=request.form)
 
         nuevo_usuario = Usuario(
             nombre_completo=nombre, 
             email=email, 
             rol_id=rol_id,
-            ciclo_asignado_id=ciclo_final,
             cambio_clave_requerido=forzar_cambio, 
             activo=True
         )
         nuevo_usuario.set_password(password)
         
         try:
+            objetos_ciclos = CatalogoCiclo.query.filter(CatalogoCiclo.id.in_(ciclos_ids)).all()
+            nuevo_usuario.ciclos = objetos_ciclos
+            
+            # 🔴 SAFE legacy
+            if objetos_ciclos:
+                nuevo_usuario.ciclo_asignado_id = objetos_ciclos[0].id
+
             db.session.add(nuevo_usuario)
             db.session.commit()
 
+            # 🔧 LOG MEJORADO
+            nombres_ciclos = ', '.join([c.nombre for c in objetos_ciclos])
             # --- Log + Envío de Credenciales ---
-            registrar_log("Creación Usuario", f"Admin creó a {nombre} ({email}) - Ciclo ID: {ciclo_final}")
+            registrar_log("Creación Usuario", f"Admin creó a {nombre} ({email}) - Ciclos: {nombres_ciclos}")
             
             if enviar_credenciales_nuevo_usuario(nuevo_usuario, password):
                 flash(f'Usuario creado con éxito. Credenciales enviadas a {email}.', 'success')
@@ -102,15 +110,15 @@ def crear_usuario():
         except Exception as e:
             db.session.rollback()
             flash(f'Error al crear usuario: {str(e)}', 'danger')
-            return render_template('admin/crear_usuario.html', roles=roles, ciclos=ciclos, datos_previos=request.form)
+            return render_template('admin/crear_usuario.html', roles=roles, ciclos=ciclos_disponibles, datos_previos=request.form)
 
-    return render_template('admin/crear_usuario.html', roles=roles, ciclos=ciclos, datos_previos=None)
+    return render_template('admin/crear_usuario.html', roles=roles, ciclos=ciclos_disponibles, datos_previos=None)
 
 @admin_bp.route('/editar_usuario/<int:id>', methods=['GET', 'POST'])
 def editar_usuario(id):
     usuario = Usuario.query.get_or_404(id)
     roles = Rol.query.order_by(Rol.nombre).all()
-    ciclos = CatalogoCiclo.query.order_by(CatalogoCiclo.id).all()
+    ciclos_disponibles = CatalogoCiclo.query.order_by(CatalogoCiclo.id).all()
 
     if request.method == 'POST':
         email_nuevo = request.form.get('email')
@@ -119,33 +127,41 @@ def editar_usuario(id):
         usuario_existente = Usuario.query.filter_by(email=email_nuevo).first()
         if usuario_existente and usuario_existente.id != id:
             flash('Error: Ese correo ya pertenece a otro usuario.', 'danger')
-            return render_template('admin/editar_usuario.html', usuario=usuario, roles=roles, ciclos=ciclos, datos_previos=request.form)
+            return render_template('admin/editar_usuario.html', usuario=usuario, roles=roles, ciclos=ciclos_disponibles, datos_previos=request.form)
 
         usuario.nombre_completo = request.form.get('nombre_completo')
         usuario.email = email_nuevo
         usuario.rol_id = request.form.get('rol_id')
-        
-        ciclo_id = request.form.get('ciclo_id')
-        usuario.ciclo_asignado_id = int(ciclo_id) if ciclo_id else None
-        
         usuario.cambio_clave_requerido = request.form.get('forzar_cambio_clave') == '1'
-
-        password = request.form.get('password')
-        if password and password.strip():
-            usuario.set_password(password)
-            flash('Contraseña actualizada.', 'info')
+        
+        # ✅ Convertir a INT
+        ciclos_ids = [int(c) for c in request.form.getlist('ciclos')]
 
         try:
+            objetos_ciclos = CatalogoCiclo.query.filter(CatalogoCiclo.id.in_(ciclos_ids)).all()
+            usuario.ciclos = objetos_ciclos
+
+            # 🔴 SAFE legacy
+            if objetos_ciclos:
+                usuario.ciclo_asignado_id = objetos_ciclos[0].id
+
+            password = request.form.get('password')
+            if password and password.strip():
+                usuario.set_password(password)
+                flash('Contraseña actualizada.', 'info')
+
             db.session.commit()
-            registrar_log("Edición Usuario", f"Admin editó a {usuario.nombre_completo}")
+            # 🔧 LOG MEJORADO
+            nombres_ciclos = ', '.join([c.nombre for c in objetos_ciclos])
+            registrar_log("Edición Usuario", f"Admin editó a {usuario.nombre_completo}. Ciclos: {nombres_ciclos}")
             flash('Usuario actualizado con éxito.', 'success')
             return redirect(url_for('admin.panel'))
         except Exception as e:
             db.session.rollback()
             flash(f'Error al actualizar: {str(e)}', 'danger')
-            return render_template('admin/editar_usuario.html', usuario=usuario, roles=roles, ciclos=ciclos, datos_previos=request.form)
+            return render_template('admin/editar_usuario.html', usuario=usuario, roles=roles, ciclos=ciclos_disponibles, datos_previos=request.form)
 
-    return render_template('admin/editar_usuario.html', usuario=usuario, roles=roles, ciclos=ciclos, datos_previos=None)
+    return render_template('admin/editar_usuario.html', usuario=usuario, roles=roles, ciclos=ciclos_disponibles, datos_previos=None)
 
 @admin_bp.route('/toggle_activo/<int:id>', methods=['POST'])
 def toggle_activo(id):

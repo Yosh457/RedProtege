@@ -189,15 +189,14 @@ def enviar_aviso_nuevo_caso(caso, usuario_ingreso):
     from models import Usuario, Rol
     from sqlalchemy import or_
     
-    # 🔥 ARQUITECTURA CORREGIDA:
-    # Notificar a los Referentes del Ciclo Vital correspondiete,
+    # ✅ FASE 2: Notificar a los Referentes cuyos ciclos incluyan el del caso (M:N)
     # Y a TODOS los usuarios con rol 'Torre Control' globalmente.
     destinatarios_query = Usuario.query.join(Rol).filter(
         Usuario.activo == True,
         Usuario.email.isnot(None),
         Usuario.email != '',
         or_(
-            (Rol.nombre == 'Referente') & (Usuario.ciclo_asignado_id == caso.ciclo_vital_id),
+            (Rol.nombre == 'Referente') & (Usuario.ciclos.any(id=caso.ciclo_vital_id)),
             Rol.nombre == 'Torre Control'
         )
     ).all()
@@ -242,12 +241,13 @@ def enviar_aviso_cierre(caso, funcionario_cierre):
         destinatarios.append(funcionario_cierre.email.strip())
     
     # 2. 🔥 ARQUITECTURA CORREGIDA: Referentes del ciclo + Torre Control
+    # ✅ FASE 2: Referentes del ciclo (M:N) + Torre Control
     monitores = Usuario.query.join(Rol).filter(
         Usuario.activo == True,
         Usuario.email.isnot(None),
         Usuario.email != '',
         or_(
-            (Rol.nombre == 'Referente') & (Usuario.ciclo_asignado_id == caso.ciclo_vital_id),
+            (Rol.nombre == 'Referente') & (Usuario.ciclos.any(id=caso.ciclo_vital_id)),
             Rol.nombre == 'Torre Control'
         )
     ).all()
@@ -574,15 +574,8 @@ def enviar_aviso_subrogancia(titular, subrogante, es_activacion=True):
     nombre_titular = getattr(titular, "nombre_completo", "Titular")
     nombre_subrogante = getattr(subrogante, "nombre_completo", "Usuario")
 
-    ciclo_titular = "Sin ciclo"
-    try:
-        if getattr(titular, "ciclo_asignado", None) and getattr(titular.ciclo_asignado, "nombre", None):
-            ciclo_titular = titular.ciclo_asignado.nombre
-        elif getattr(titular, "ciclo_asignado_id", None) is None:
-            # Por si tu regla considera "global" cuando no hay ciclo asignado
-            ciclo_titular = "Global"
-    except Exception:
-        ciclo_titular = "Sin ciclo"
+    # ✅ FASE 2: Listar todos los nombres de los ciclos del titular
+    ciclo_titular = ", ".join([c.nombre for c in titular.ciclos]) if titular.ciclos else "Global/Sin asignar"
 
     # Link a la bandeja
     url_bandeja = url_for("casos.index", _external=True)

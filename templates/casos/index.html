@@ -489,7 +489,7 @@
                         <option value="">-- Seleccionar --</option>
                         {% for cand in candidatos_subrogancia %}
                             <option value="{{ cand.id }}">
-                                {{ cand.nombre_completo }} ({{ cand.ciclo_asignado.nombre if cand.ciclo_asignado else 'Sin ciclo' }})
+                                {{ cand.nombre_completo }} ({{ cand.ciclos | map(attribute='nombre') | join(', ') if cand.ciclos else 'Sin ciclo' }})
                             </option>
                         {% endfor %}
                     </select>

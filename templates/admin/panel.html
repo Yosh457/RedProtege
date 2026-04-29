@@ -62,7 +62,7 @@
                     <tr>
                         <th class="py-3 px-4 text-left text-sm font-semibold">Usuario</th>
                         <th class="py-3 px-4 text-left text-sm font-semibold">Rol</th>
-                        <th class="py-3 px-4 text-left text-sm font-semibold">Ciclo Asignado</th>
+                        <th class="py-3 px-4 text-left text-sm font-semibold">Ciclos Asignados</th>
                         <th class="py-3 px-4 text-center text-sm font-semibold">Estado</th>
                         <th class="py-3 px-4 text-center text-sm font-semibold">Acciones</th>
                     </tr>
@@ -78,8 +78,13 @@
                             <span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded font-bold">{{ usuario.rol.nombre }}</span>
                         </td>
                         <td class="py-3 px-4">
-                            {% if usuario.ciclo_asignado %}
-                                <span class="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded font-bold">{{ usuario.ciclo_asignado.nombre }}</span>
+                            {# ✅ NUEVO: Iterar sobre la lista de ciclos del usuario #}
+                            {% if usuario.ciclos and usuario.ciclos|length > 0 %}
+                                <div class="flex flex-wrap gap-1.5">
+                                    {% for ciclo in usuario.ciclos %}
+                                        <span class="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded font-bold whitespace-nowrap">{{ ciclo.nombre }}</span>
+                                    {% endfor %}
+                                </div>
                             {% else %}
                                 <span class="text-gray-400 text-xs italic">Global / Sin asignar</span>
                             {% endif %}

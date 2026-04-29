@@ -17,6 +17,13 @@ caso_vulneraciones = db.Table('caso_vulneraciones',
     db.Column('vulneracion_id', db.Integer, db.ForeignKey('catalogo_vulneraciones.id'), primary_key=True)
 )
 
+# Tabla puente para relacionar Usuarios con múltiples Ciclos Vitales (M:N)
+# Permite que un usuario (Referente/Coordinador) supervise varios ciclos a la vez.
+usuario_ciclos = db.Table('usuario_ciclos',
+    db.Column('usuario_id', db.Integer, db.ForeignKey('usuarios.id'), primary_key=True),
+    db.Column('ciclo_id', db.Integer, db.ForeignKey('catalogo_ciclos.id'), primary_key=True)
+)
+
 # --- CATÁLOGOS ---
 
 class Rol(db.Model):
@@ -82,6 +89,9 @@ class Usuario(db.Model, UserMixin):
     ciclo_asignado_id = db.Column(db.Integer, db.ForeignKey('catalogo_ciclos.id'), index=True, nullable=True)
     ciclo_asignado = db.relationship('CatalogoCiclo', back_populates='usuarios')
 
+    # ✅ NUEVA RELACIÓN M:N (FASE 1): Permite gestionar múltiples ciclos
+    ciclos = db.relationship('CatalogoCiclo', secondary=usuario_ciclos, backref=db.backref('usuarios_asociados', lazy='dynamic'))
+    
     # --- NUEVO: SUBROGANCIA (Delegación de funciones) ---
     # Indica que ESTE usuario está actuando como subrogante del usuario referenciado aquí.
     # Ejemplo: Si yo soy Juan y esta columna tiene el ID de Pedro, yo puedo ver lo de Pedro.

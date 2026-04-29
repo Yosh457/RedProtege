@@ -77,24 +77,28 @@ def index():
     elif rol_nombre in ['Referente', 'Visualizador']:
         ciclos_permitidos = []
 
-        # 1) Ciclo propio (si tiene)
-        if current_user.ciclo_asignado_id:
-            ciclos_permitidos.append(current_user.ciclo_asignado_id)
-            titulo_vista = f"Ciclo {current_user.ciclo_asignado.nombre}"
+        # ✅ FASE 2: Múltiples ciclos propios
+        if current_user.ciclos:
+            ciclos_permitidos.extend([c.id for c in current_user.ciclos])
+            nombres_ciclos = ", ".join([c.nombre for c in current_user.ciclos])
+            titulo_vista = f"Ciclos: {nombres_ciclos}"
         else:
             titulo_vista = "Vista Global (Todos los Ciclos)"
 
-        # 2) Ciclo subrogado (si soy subrogante de alguien)
-        if current_user.subrogante_de and current_user.subrogante_de.ciclo_asignado_id:
-            ciclo_sub = current_user.subrogante_de.ciclo_asignado_id
-            if ciclo_sub not in ciclos_permitidos:
-                ciclos_permitidos.append(ciclo_sub)
+
+        # ✅ FASE 2: Múltiples ciclos subrogados
+        if current_user.subrogante_de and current_user.subrogante_de.ciclos:
+            ciclos_sub = [c.id for c in current_user.subrogante_de.ciclos]
+            for c_id in ciclos_sub:
+                if c_id not in ciclos_permitidos:
+                    ciclos_permitidos.append(c_id)
 
             # Título más informativo
-            if current_user.ciclo_asignado_id:
-                titulo_vista = f"Ciclo {current_user.ciclo_asignado.nombre} + Subrogancia ({current_user.subrogante_de.ciclo_asignado.nombre})"
+            nombres_sub = ", ".join([c.nombre for c in current_user.subrogante_de.ciclos])
+            if current_user.ciclos:
+                titulo_vista = f"Ciclos Propios + Subrogando ({nombres_sub})"
             else:
-                titulo_vista = f"Subrogancia ({current_user.subrogante_de.ciclo_asignado.nombre})"
+                titulo_vista = f"Subrogando ({nombres_sub})"
 
         # Aplicar filtro por ciclos permitidos si corresponde
         if ciclos_permitidos:
@@ -343,14 +347,15 @@ def ver_caso(id):
 
     # Referente / Visualizador (por ciclo o subrogancia)
     elif rol_nombre in ['Referente', 'Visualizador']:
+        # ✅ FASE 2: Comprobar acceso en lista M:N
         acceso_propio = (
-            current_user.ciclo_asignado_id is None or
-            caso.ciclo_vital_id == current_user.ciclo_asignado_id
+            not current_user.ciclos or 
+            caso.ciclo_vital_id in [c.id for c in current_user.ciclos]
         )
 
         acceso_subrogado = False
-        if current_user.subrogante_de and current_user.subrogante_de.ciclo_asignado_id:
-            acceso_subrogado = caso.ciclo_vital_id == current_user.subrogante_de.ciclo_asignado_id
+        if current_user.subrogante_de and current_user.subrogante_de.ciclos:
+            acceso_subrogado = caso.ciclo_vital_id in [c.id for c in current_user.subrogante_de.ciclos]
 
         permitido = acceso_propio or acceso_subrogado
 
@@ -397,8 +402,8 @@ def ver_caso(id):
             # 🔥 CAMBIO AQUÍ: Ya NO filtramos q_ts por el ciclo del caso. 
             # Los Trabajadores Sociales son un recurso global/transversal.
             
-            # Mantenemos el filtro solo para el Coordinador de Ciclo:
-            q_coord = q_coord.filter(Usuario.ciclo_asignado_id == caso.ciclo_vital_id)
+            # ✅ FASE 2: Filtrar Coordinadores usando M:N (.any)
+            q_coord = q_coord.filter(Usuario.ciclos.any(id=caso.ciclo_vital_id))
 
         funcionarios_ts = q_ts.order_by(Usuario.nombre_completo).all()
         funcionarios_coord = q_coord.order_by(Usuario.nombre_completo).all()
@@ -482,7 +487,8 @@ def ver_caso(id):
                     flash('Coordinador se encuentra inactivo.', 'danger')
                     return redirect(url_for('casos.ver_caso', id=caso.id))
 
-                if rol_nombre == 'Referente' and user_coord.ciclo_asignado_id != caso.ciclo_vital_id:
+                # ✅ FASE 2: Validar Coordinador usando lista M:N
+                if rol_nombre == 'Referente' and caso.ciclo_vital_id not in [c.id for c in user_coord.ciclos]:
                     flash('El Coordinador no pertenece al ciclo del caso.', 'danger')
                     return redirect(url_for('casos.ver_caso', id=caso.id))
 
@@ -561,10 +567,7 @@ def ver_caso(id):
                         ))
 
                         if not ok:
-                            flash(
-                                f'Caso asignado, pero no se pudo notificar a {usuario.nombre_completo}.',
-                                'warning'
-                            )
+                            flash(f'Caso asignado, pero no se pudo notificar a {usuario.nombre_completo}.', 'warning')
 
                     except Exception as e_mail:
                         registrar_log("Error Email", str(e_mail))
@@ -1060,14 +1063,15 @@ def descargar_acta(id):
 
     # --- Referente / Visualizador (por ciclo + subrogancia) ---
     elif rol_nombre in ['Referente', 'Visualizador']:
+        # ✅ FASE 2: Comprobar acceso en lista M:N
         acceso_propio = (
-            current_user.ciclo_asignado_id is None or
-            caso.ciclo_vital_id == current_user.ciclo_asignado_id
+            not current_user.ciclos or
+            caso.ciclo_vital_id in [c.id for c in current_user.ciclos]
         )
 
         acceso_subrogado = False
-        if current_user.subrogante_de and current_user.subrogante_de.ciclo_asignado_id:
-            if caso.ciclo_vital_id == current_user.subrogante_de.ciclo_asignado_id:
+        if current_user.subrogante_de and current_user.subrogante_de.ciclos:
+            if caso.ciclo_vital_id in [c.id for c in current_user.subrogante_de.ciclos]:
                 acceso_subrogado = True
 
         if acceso_propio or acceso_subrogado:
@@ -1188,13 +1192,15 @@ def exportar_excel():
     elif rol_nombre in ['Referente', 'Visualizador']:
         ciclos_permitidos = []
 
-        if current_user.ciclo_asignado_id:
-            ciclos_permitidos.append(current_user.ciclo_asignado_id)
+        # ✅ FASE 2: Múltiples ciclos en exportación
+        if current_user.ciclos:
+            ciclos_permitidos.extend([c.id for c in current_user.ciclos])
 
-        if current_user.subrogante_de and current_user.subrogante_de.ciclo_asignado_id:
-            ciclo_sub = current_user.subrogante_de.ciclo_asignado_id
-            if ciclo_sub not in ciclos_permitidos:
-                ciclos_permitidos.append(ciclo_sub)
+        if current_user.subrogante_de and current_user.subrogante_de.ciclos:
+            ciclos_sub = [c.id for c in current_user.subrogante_de.ciclos]
+            for c_id in ciclos_sub:
+                if c_id not in ciclos_permitidos:
+                    ciclos_permitidos.append(c_id)
 
         if ciclos_permitidos:
             filters.append(Caso.ciclo_vital_id.in_(ciclos_permitidos))
