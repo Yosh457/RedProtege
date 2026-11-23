@@ -6,6 +6,7 @@ from flask_login import login_required, current_user
 from sqlalchemy import case, or_, func
 from models import db, Caso, Usuario, Rol, AuditoriaCaso, CatalogoEstablecimiento, CatalogoInstitucion, CatalogoRecinto, obtener_hora_chile, CasoGestion
 from utils import check_password_change, registrar_log, enviar_aviso_asignacion, generar_acta_cierre_pdf, enviar_aviso_cierre, enviar_aviso_subrogancia, es_rut_valido, safe_int, enviar_reporte_estadistico_masivo
+from utils.autorizacion import aplicar_filtro_casos, puede_realizar
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -55,94 +56,64 @@ def index():
     search_query = request.args.get('search', '').strip()
     estado_filter = request.args.get('estado', '').strip()
 
-    rol_nombre = current_user.rol.nombre
-    titulo_vista = "Vista Global"
-
-    # =========================================================
-    # A. FILTROS DE SEGURIDAD (RBAC) + SUBROGANCIA
-    # =========================================================
-    filters = []
-
-    # Datos para UI Subrogancia (solo referentes)
-    candidatos_subrogancia = []
-    subrogante_activo = None  # objeto Usuario (el que me está subrogando)
-
-    if rol_nombre in ['Admin', 'Torre Control']:
-        titulo_vista = "Vista Global"
-
-    elif rol_nombre == 'Coordinador EPI':
-        # EPI ve todo, pero en el frontend le ocultaremos las acciones
-        titulo_vista = "Vista Global (Coordinador EPI)"
-
-    elif rol_nombre in ['Referente', 'Visualizador']:
-        ciclos_permitidos = []
-
-        # ✅ FASE 2: Múltiples ciclos propios
-        if current_user.ciclos:
-            ciclos_permitidos.extend([c.id for c in current_user.ciclos])
-            nombres_ciclos = ", ".join([c.nombre for c in current_user.ciclos])
-            titulo_vista = f"Ciclos: {nombres_ciclos}"
-        else:
-            titulo_vista = "Vista Global (Todos los Ciclos)"
-
-
-        # ✅ FASE 2: Múltiples ciclos subrogados
-        if current_user.subrogante_de and current_user.subrogante_de.ciclos:
-            ciclos_sub = [c.id for c in current_user.subrogante_de.ciclos]
-            for c_id in ciclos_sub:
-                if c_id not in ciclos_permitidos:
-                    ciclos_permitidos.append(c_id)
-
-            # Título más informativo
-            nombres_sub = ", ".join([c.nombre for c in current_user.subrogante_de.ciclos])
-            if current_user.ciclos:
-                titulo_vista = f"Ciclos Propios + Subrogando ({nombres_sub})"
-            else:
-                titulo_vista = f"Subrogando ({nombres_sub})"
-
-        # Aplicar filtro por ciclos permitidos si corresponde
-        if ciclos_permitidos:
-            filters.append(Caso.ciclo_vital_id.in_(ciclos_permitidos))
-
-        # UI Subrogancia solo para Referentes
-        if rol_nombre == 'Referente':
-            # a) Lista de candidatos (otros referentes activos, distintos a mí)
-            candidatos_subrogancia = Usuario.query.join(Rol).filter(
-                Rol.nombre == 'Referente',
-                Usuario.activo == True,
-                Usuario.id != current_user.id
-            ).order_by(Usuario.nombre_completo).all()
-
-            # b) Subrogante activo (quién me está subrogando a mí)
-            # OJO: subrogantes_activos es dynamic (AppenderQuery), así que usamos first()
-            subrogante_activo = None
-            if getattr(current_user, "subrogantes_activos", None):
-                try:
-                    subrogante_activo = current_user.subrogantes_activos.first()
-                except Exception:
-                    # Si por alguna razón NO es query y sí es lista, igual funcionará
-                    subrogante_activo = current_user.subrogantes_activos[0] if current_user.subrogantes_activos else None
-
-    elif rol_nombre == 'Trabajador(a) Social':
-        # NUEVO: Filtra por la columna nueva de TS o por la legacy (mientras dure la migración)
-        filters.append(or_(
-            Caso.asignado_ts_id == current_user.id,
-            Caso.asignado_a_usuario_id == current_user.id
-        ))
-        titulo_vista = "Mis Casos Asignados (Gestión)"
-
-    elif rol_nombre == 'Coordinador Ciclo':
-        # NUEVO: Filtra por la columna nueva de Coordinador
-        filters.append(Caso.asignado_coord_id == current_user.id)
-        titulo_vista = "Mis Casos Supervisados"
-
-    else:
-        # Si es Solicitante y trata de entrar a la bandeja, lo pateamos
+    # Política de entrada: rol válido, usuario activo y permiso de listado.
+    if not puede_realizar(current_user, 'casos.listar'):
         abort(403)
 
-    # Query Base (Solo Seguridad)
-    base_query = Caso.query.filter(*filters)
+    rol_nombre = current_user.rol.nombre
+    titulo_vista = 'Vista Global'
 
+    # Variables de presentación del componente de subrogancias.
+    candidatos_subrogancia = []
+    subrogante_activo = None
+
+    if rol_nombre == 'Coordinador EPI':
+        titulo_vista = 'Mis Recintos Autorizados (Coordinación EPI)'
+    elif rol_nombre == 'Coordinador(a) de Urgencia':
+        titulo_vista = 'Mis Recintos Autorizados (Urgencia)'
+    elif rol_nombre == 'Trabajador(a) Social':
+        titulo_vista = 'Mis Casos Asignados (Gestión)'
+    elif rol_nombre == 'Coordinador Ciclo':
+        titulo_vista = 'Mis Casos Supervisados'
+    elif rol_nombre == 'Referente':
+        # Etiqueta solamente: la autorización efectiva se aplica a las consultas.
+        ciclos = list(current_user.ciclos or [])
+        ciclos_titular = []
+        titular = current_user.subrogante_de
+        if (titular is not None and titular.activo is True
+                and titular.rol is not None and titular.rol.nombre == 'Referente'):
+            ciclos_titular = list(titular.ciclos or [])
+
+        if ciclos and ciclos_titular:
+            nombres = ', '.join(c.nombre for c in ciclos_titular)
+            titulo_vista = f'Ciclos Propios + Subrogando ({nombres})'
+        elif ciclos_titular:
+            nombres = ', '.join(c.nombre for c in ciclos_titular)
+            titulo_vista = f'Subrogando ({nombres})'
+        elif ciclos:
+            titulo_vista = 'Ciclos: ' + ', '.join(c.nombre for c in ciclos)
+        else:
+            titulo_vista = 'Sin ciclos asignados'
+
+        # La interfaz de subrogancias sigue siendo exclusiva de referentes.
+        candidatos_subrogancia = Usuario.query.join(Rol).filter(
+            Rol.nombre == 'Referente',
+            Usuario.activo == True,
+            Usuario.id != current_user.id
+        ).order_by(Usuario.nombre_completo).all()
+        if getattr(current_user, 'subrogantes_activos', None):
+            try:
+                subrogante_activo = current_user.subrogantes_activos.first()
+            except (AttributeError, TypeError):
+                activos = current_user.subrogantes_activos
+                subrogante_activo = activos[0] if activos else None
+    elif rol_nombre == 'Visualizador':
+        titulo_vista = 'Vista Global (Solo Lectura)'
+
+    # Solo esta consulta decide el ámbito territorial/ciclos/asignaciones.
+    base_query = aplicar_filtro_casos(
+        current_user, Caso.query, accion='casos.listar', modelo=Caso
+    )
     # =========================================================
     # B. DASHBOARD DATA (KPIs + GRÁFICOS)
     # Ignoran filtros de búsqueda/estado, muestran la "realidad total" del usuario
@@ -154,7 +125,10 @@ def index():
         func.sum(case((Caso.estado == 'PENDIENTE_RESCATAR', 1), else_=0)).label('pendientes'),
         func.sum(case((Caso.estado == 'EN_SEGUIMIENTO', 1), else_=0)).label('seguimiento'),
         func.sum(case((Caso.estado == 'CERRADO', 1), else_=0)).label('cerrados')
-    ).filter(*filters, Caso.estado != 'ANULADO')  # Excluir anulados del conteo general
+    )
+    stats_query = aplicar_filtro_casos(
+        current_user, stats_query, accion='casos.listar', modelo=Caso
+    ).filter(Caso.estado != 'ANULADO')  # Excluir anulados del conteo general
     
     stats_result = stats_query.first()
     
@@ -175,10 +149,13 @@ def index():
     
     # Query agrupada por fecha (versión compatible universalmente: traemos datos y procesamos en python)
     # Filtramos por fecha >= inicio Y filtros de seguridad
-    weekly_raw = db.session.query(Caso.fecha_ingreso).filter(
+    weekly_query = aplicar_filtro_casos(
+        current_user, db.session.query(Caso.fecha_ingreso),
+        accion='casos.listar', modelo=Caso
+    )
+    weekly_raw = weekly_query.filter(
         Caso.fecha_ingreso >= fecha_inicio,
-        Caso.estado != 'ANULADO',  # Excluir anulados del gráfico semanal
-        *filters
+        Caso.estado != 'ANULADO'
     ).all()
 
     # Procesamiento en Python para llenar días vacíos con 0
@@ -212,11 +189,12 @@ def index():
         bar_data.append(weekly_map[d_str])
 
     # 3. Recintos de Notificación (Doughnut) - Agrupar por nombre de recinto
-    notif_query = db.session.query(
-        CatalogoRecinto.nombre,
-        func.count(Caso.id).label('count')
-    ).join(Caso.recinto_notifica)\
-     .filter(*filters, Caso.estado != 'ANULADO')\
+    notif_query = aplicar_filtro_casos(
+        current_user, db.session.query(
+            CatalogoRecinto.nombre,
+            func.count(Caso.id).label('count')
+        ).join(Caso.recinto_notifica), accion='casos.listar', modelo=Caso
+    ).filter(Caso.estado != 'ANULADO')\
      .group_by(CatalogoRecinto.nombre)\
      .order_by(func.count(Caso.id).desc()).all()
 
@@ -247,11 +225,12 @@ def index():
     notif_total = temp_total_notif
 
     # 4. Recintos Inscritos (Barras Horizontales - Top 5)
-    inscritos_query = db.session.query(
-        CatalogoEstablecimiento.nombre,
-        func.count(Caso.id).label('count')
-    ).join(Caso.recinto_inscrito)\
-     .filter(*filters, Caso.estado != 'ANULADO')\
+    inscritos_query = aplicar_filtro_casos(
+        current_user, db.session.query(
+            CatalogoEstablecimiento.nombre,
+            func.count(Caso.id).label('count')
+        ).join(Caso.recinto_inscrito), accion='casos.listar', modelo=Caso
+    ).filter(Caso.estado != 'ANULADO')\
      .group_by(CatalogoEstablecimiento.nombre)\
      .order_by(func.count(Caso.id).desc())\
      .limit(5).all()
