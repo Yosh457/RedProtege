@@ -183,20 +183,16 @@ class TestExportacionesActasHTTP(unittest.TestCase):
         self.assertFalse(servido)
 
     # Politica OBJETIVO: estas discrepancias deben desaparecer en 1.3-C.4-B/C.
-    @unittest.expectedFailure
     def test_12_OBJETIVO_epi_exporta_solo_recinto_notificador(self):
         self.assertEqual(self.folios_excel(17), {'FIC-001'})
 
-    @unittest.expectedFailure
     def test_13_OBJETIVO_referente_sin_ciclos_no_exporta(self):
         r, _ = self.peticion('/casos/exportar', 14)
         self.assertEqual(r.status_code, 403)
 
-    @unittest.expectedFailure
     def test_14_OBJETIVO_visualizador_exporta_global(self):
         self.assertEqual(self.folios_excel(12), {'FIC-001', 'FIC-002'})
 
-    @unittest.expectedFailure
     def test_15_OBJETIVO_usuario_inactivo_no_exporta(self):
         r, _ = self.peticion('/casos/exportar', 20)
         self.assertEqual(r.status_code, 403)

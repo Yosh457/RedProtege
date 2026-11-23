@@ -96,6 +96,21 @@ def _usuario_habilitado(usuario):
             and getattr(usuario, 'activo', None) is True
             and _id_positivo(getattr(usuario, 'id', None)) is not None)
 
+def puede_exportar_ambito(usuario):
+    """Admite exportacion solo con permiso y ambito asignado cuando aplica.
+
+    TS conserva exportacion vacia cuando no tiene casos; Referente y perfiles
+    territoriales deben tener una asignacion de alcance explicita.
+    """
+    if not puede_realizar(usuario, EXPORTAR):
+        return False
+    rol = _rol(usuario)
+    if rol == REFERENTE:
+        return bool(_ciclos_autorizados(usuario))
+    if rol in (EPI, URGENCIA):
+        return bool(_recintos_autorizados(usuario))
+    return True
+
 def puede_realizar(usuario, accion):
     """Permiso basado exclusivamente en el rol (no evalúa un caso ni estado)."""
     return _usuario_habilitado(usuario) and accion in _PERMISOS.get(_rol(usuario), ())

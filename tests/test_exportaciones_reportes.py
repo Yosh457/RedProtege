@@ -25,7 +25,8 @@ class TestExportacionesReportes(unittest.TestCase):
     @staticmethod
     def usuario(rol, *, ciclos=None, subrogante_de=None):
         return SimpleNamespace(
-            id=10,
+            id=10, activo=True, is_authenticated=True,
+            recintos=[SimpleNamespace(id=1)] if rol == "Coordinador EPI" else [],
             rol=SimpleNamespace(nombre=rol),
             ciclos=[] if ciclos is None else ciclos,
             subrogante_de=subrogante_de,
@@ -55,7 +56,7 @@ class TestExportacionesReportes(unittest.TestCase):
     def test_torre_control_exporta_reporte_vacio_simulado(self):
         self._comprobar_exportacion_permitida("Torre Control")
 
-    def test_coordinador_epi_exporta_globalmente_actualmente(self):
+    def test_coordinador_epi_exporta_con_recinto_autorizado(self):
         # Comportamiento heredado: debe limitarse por recinto en futura fase.
         self._comprobar_exportacion_permitida("Coordinador EPI")
 

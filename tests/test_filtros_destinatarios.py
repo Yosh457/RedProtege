@@ -53,7 +53,7 @@ class TestFiltrosExportacion(unittest.TestCase):
     @staticmethod
     def usuario(rol, *, ciclos=None, subrogante_de=None, id=10):
         return SimpleNamespace(
-            id=id,
+            id=id, activo=True, is_authenticated=True,
             rol=SimpleNamespace(nombre=rol),
             ciclos=[] if ciclos is None else ciclos,
             subrogante_de=subrogante_de,
@@ -78,7 +78,7 @@ class TestFiltrosExportacion(unittest.TestCase):
         self.assertIn([2], consulta.parametros())
 
     def test_referente_incluye_ciclo_subrogado(self):
-        titular = SimpleNamespace(ciclos=[SimpleNamespace(id=3)])
+        titular = SimpleNamespace(activo=True, rol=SimpleNamespace(nombre='Referente'), ciclos=[SimpleNamespace(id=3)])
         consulta = self.exportar_simulado(self.usuario(
             'Referente', ciclos=[SimpleNamespace(id=2)], subrogante_de=titular
         ))
@@ -87,20 +87,22 @@ class TestFiltrosExportacion(unittest.TestCase):
         self.assertTrue(any(isinstance(v, (tuple, list)) and set(v) == {2, 3}
                             for v in consulta.parametros()))
 
-    def test_visualizador_con_ciclo_restringe_exportacion_actualmente(self):
+    def test_visualizador_con_ciclo_exporta_global_por_politica(self):
         consulta = self.exportar_simulado(
             self.usuario('Visualizador', ciclos=[SimpleNamespace(id=2)])
         )
-        self.assertIn('ciclo_vital_id', consulta.texto_sql())
-        self.assertIn([2], consulta.parametros())
+        self.assertNotIn('ciclo_vital_id', consulta.texto_sql())
 
     def test_visualizador_sin_ciclos_exporta_globalmente_actualmente(self):
         consulta = self.exportar_simulado(self.usuario('Visualizador'))
         self.assertNotIn('ciclo_vital_id', consulta.texto_sql())
 
-    def test_referente_sin_ciclos_exporta_globalmente_actualmente(self):
-        consulta = self.exportar_simulado(self.usuario('Referente'))
-        self.assertNotIn('ciclo_vital_id', consulta.texto_sql())
+    def test_referente_sin_ciclos_no_exporta(self):
+        from werkzeug.exceptions import Forbidden
+        with self.app.test_request_context('/casos/exportar'):
+            with patch.object(modulo_casos, 'current_user', self.usuario('Referente')):
+                with self.assertRaises(Forbidden):
+                    modulo_casos.exportar_excel.__wrapped__()
 
     def test_trabajador_social_filtra_por_asignacion_actual_y_heredada(self):
         consulta = self.exportar_simulado(self.usuario('Trabajador(a) Social'))
@@ -109,10 +111,12 @@ class TestFiltrosExportacion(unittest.TestCase):
         self.assertIn('asignado_a_usuario_id', sql)
         self.assertGreaterEqual(consulta.parametros().count(10), 2)
 
-    def test_coordinador_epi_no_filtra_por_recinto_actualmente(self):
-        consulta = self.exportar_simulado(self.usuario('Coordinador EPI'))
-        self.assertNotIn('recinto_notifica_id', consulta.texto_sql())
-        self.assertNotIn('ciclo_vital_id', consulta.texto_sql())
+    def test_coordinador_epi_filtra_recinto_notificador(self):
+        usuario = self.usuario('Coordinador EPI')
+        usuario.recintos = [SimpleNamespace(id=1)]
+        consulta = self.exportar_simulado(usuario)
+        self.assertIn('recinto_notifica_id', consulta.texto_sql())
+        self.assertIn([1], consulta.parametros())
 
     def test_exportacion_omite_anulados_por_defecto(self):
         consulta = self.exportar_simulado(self.usuario('Admin'))

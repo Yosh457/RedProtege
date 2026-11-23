@@ -6,7 +6,7 @@ from flask_login import login_required, current_user
 from sqlalchemy import case, or_, func
 from models import db, Caso, Usuario, Rol, AuditoriaCaso, CatalogoEstablecimiento, CatalogoInstitucion, CatalogoRecinto, obtener_hora_chile, CasoGestion
 from utils import check_password_change, registrar_log, enviar_aviso_asignacion, generar_acta_cierre_pdf, enviar_aviso_cierre, enviar_aviso_subrogancia, es_rut_valido, safe_int, enviar_reporte_estadistico_masivo
-from utils.autorizacion import aplicar_filtro_casos, puede_realizar, puede_acceder_caso
+from utils.autorizacion import aplicar_filtro_casos, puede_realizar, puede_acceder_caso, puede_exportar_ambito
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -1172,50 +1172,14 @@ def exportar_excel():
     search_query = request.args.get('search', '').strip()
     estado_filter = request.args.get('estado', '').strip()
 
-    rol_nombre = current_user.rol.nombre
-    
-    # 2. Construir Filtros de Seguridad (Base Query)
-    filters = []
-
-    # A) Acceso Global
-    if rol_nombre in ['Admin', 'Torre Control', 'Coordinador EPI']:
-        pass 
-        
-    # B) Acceso por Ciclo (Referente / Visualizador)
-    elif rol_nombre in ['Referente', 'Visualizador']:
-        ciclos_permitidos = []
-
-        # ✅ FASE 2: Múltiples ciclos en exportación
-        if current_user.ciclos:
-            ciclos_permitidos.extend([c.id for c in current_user.ciclos])
-
-        if current_user.subrogante_de and current_user.subrogante_de.ciclos:
-            ciclos_sub = [c.id for c in current_user.subrogante_de.ciclos]
-            for c_id in ciclos_sub:
-                if c_id not in ciclos_permitidos:
-                    ciclos_permitidos.append(c_id)
-
-        if ciclos_permitidos:
-            filters.append(Caso.ciclo_vital_id.in_(ciclos_permitidos))
-        else:
-            pass # Si no tiene ciclo, asume global o vacío según regla de negocio
-            
-    # C) Acceso TS (Gestor) - Migración Segura
-    elif rol_nombre == 'Trabajador(a) Social':
-        filters.append(or_(
-            Caso.asignado_ts_id == current_user.id,
-            Caso.asignado_a_usuario_id == current_user.id
-        ))
-        
-    # D) Acceso Coordinador Ciclo
-    elif rol_nombre == 'Coordinador Ciclo':
-        filters.append(Caso.asignado_coord_id == current_user.id)
-        
-    else:
+    # Fase 1.3-C.4-B: validar permiso y alcance ANTES de crear el Excel.
+    if not puede_exportar_ambito(current_user):
         abort(403)
 
-    # Iniciar query segura
-    query = Caso.query.filter(*filters)
+    # Misma politica RBAC que la bandeja: no inventar filtros por rol.
+    query = aplicar_filtro_casos(
+        current_user, Caso.query, 'casos.exportar', modelo=Caso
+    )
 
     # 3. Aplicar Filtros de Usuario (Búsqueda y Estado)
     if search_query:
