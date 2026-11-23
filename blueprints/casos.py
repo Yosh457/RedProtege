@@ -542,12 +542,58 @@ def ver_caso(id):
             print(f"Error asignación dual: {e}")
             flash('Error al procesar la asignación.', 'danger')
 
+
+    # Fase 1.3-C.3-C: permisos de presentacion, nunca sustituyen validaciones HTTP.
+    # Gestionar: el endpoint vigente solo admite Admin, Torre y TS asignado.
+    rol_gestion_vigente = rol_nombre in ('Admin', 'Torre Control', 'Trabajador(a) Social')
+    puede_gestionar_vista = (
+        rol_gestion_vigente
+        and puede_acceder_caso(current_user, caso, 'casos.gestionar')
+    )
+
+    # Anular: el endpoint vigente solo admite Admin y Torre Control.
+    puede_anular_vista = (
+        rol_nombre in ('Admin', 'Torre Control')
+        and puede_acceder_caso(current_user, caso, 'casos.anular')
+    )
+
+    # Descargar acta: interseccion de politica objetivo y controles heredados
+    # del endpoint /casos/acta/<id>. Se evita mostrar un enlace que aun daria
+    # acceso denegado hasta modernizar la descarga en la fase correspondiente.
+    descarga_heredada = rol_nombre in ('Admin', 'Torre Control', 'Coordinador EPI')
+    if rol_nombre in ('Referente', 'Visualizador'):
+        ciclos_propios = list(getattr(current_user, 'ciclos', None) or [])
+        mismo_ciclo = not ciclos_propios or any(
+            c.id == caso.ciclo_vital_id for c in ciclos_propios
+        )
+        titular = getattr(current_user, 'subrogante_de', None)
+        ciclo_subrogado = bool(titular and getattr(titular, 'ciclos', None) and any(
+            c.id == caso.ciclo_vital_id for c in titular.ciclos
+        ))
+        descarga_heredada = mismo_ciclo or ciclo_subrogado
+    elif rol_nombre == 'Trabajador(a) Social':
+        descarga_heredada = (
+            caso.asignado_ts_id == current_user.id
+            or caso.asignado_a_usuario_id == current_user.id
+            or caso.usuario_cierre_id == current_user.id
+        )
+    elif rol_nombre == 'Coordinador Ciclo':
+        descarga_heredada = caso.asignado_coord_id == current_user.id
+
+    puede_descargar_acta_vista = (
+        descarga_heredada
+        and puede_acceder_caso(current_user, caso, 'casos.descargar_acta')
+    )
+
     return render_template(
         'casos/ver.html',
         caso=caso,
         funcionarios_ts=funcionarios_ts,
         funcionarios_coord=funcionarios_coord,
-        puede_asignar=puede_asignar
+        puede_asignar=puede_asignar,
+        puede_gestionar_vista=puede_gestionar_vista,
+        puede_anular_vista=puede_anular_vista,
+        puede_descargar_acta_vista=puede_descargar_acta_vista
     )
 
 # --- NUEVA RUTA: GESTIÓN CLÍNICA (FASE 4 P2) ---
