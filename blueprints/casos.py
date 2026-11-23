@@ -6,7 +6,7 @@ from flask_login import login_required, current_user
 from sqlalchemy import case, or_, func
 from models import db, Caso, Usuario, Rol, AuditoriaCaso, CatalogoEstablecimiento, CatalogoInstitucion, CatalogoRecinto, obtener_hora_chile, CasoGestion
 from utils import check_password_change, registrar_log, enviar_aviso_asignacion, generar_acta_cierre_pdf, enviar_aviso_cierre, enviar_aviso_subrogancia, es_rut_valido, safe_int, enviar_reporte_estadistico_masivo
-from utils.autorizacion import aplicar_filtro_casos, puede_realizar
+from utils.autorizacion import aplicar_filtro_casos, puede_realizar, puede_acceder_caso
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -316,42 +316,10 @@ def ver_caso(id):
     rol_nombre = current_user.rol.nombre
 
     # =========================================================
-    # 1. SEGURIDAD DE ACCESO (Permisos)
+    # 1. AUTORIZACION CENTRALIZADA DE LECTURA DEL DETALLE
     # =========================================================
-    permitido = False
-
-    # Roles globales
-    if rol_nombre in ['Admin', 'Torre Control']:
-        permitido = True
-
-    # Referente / Visualizador (por ciclo o subrogancia)
-    elif rol_nombre in ['Referente', 'Visualizador']:
-        # ✅ FASE 2: Comprobar acceso en lista M:N
-        acceso_propio = (
-            not current_user.ciclos or 
-            caso.ciclo_vital_id in [c.id for c in current_user.ciclos]
-        )
-
-        acceso_subrogado = False
-        if current_user.subrogante_de and current_user.subrogante_de.ciclos:
-            acceso_subrogado = caso.ciclo_vital_id in [c.id for c in current_user.subrogante_de.ciclos]
-
-        permitido = acceso_propio or acceso_subrogado
-
-    # Trabajador(a) Social
-    elif rol_nombre == 'Trabajador(a) Social':
-        if (
-            caso.asignado_ts_id == current_user.id or
-            caso.asignado_a_usuario_id == current_user.id  # legacy
-        ):
-            permitido = True
-
-    # Coordinador de Ciclo
-    elif rol_nombre == 'Coordinador Ciclo':
-        if caso.asignado_coord_id == current_user.id:
-            permitido = True
-
-    if not permitido:
+    # La posibilidad de ver el caso NO concede permiso de asignacion.
+    if not puede_acceder_caso(current_user, caso, 'casos.ver'):
         abort(403)
 
     # =========================================================

@@ -25,7 +25,8 @@ class TestConsistenciaAsignaciones(unittest.TestCase):
         return SimpleNamespace(
             id=identificador, nombre_completo="Usuario de prueba",
             rol=SimpleNamespace(nombre=rol), ciclos=[], subrogante_de=None,
-            activo=True, email="prueba@example.invalid",
+            activo=True, is_authenticated=True,
+            email="prueba@example.invalid",
         )
 
     @staticmethod

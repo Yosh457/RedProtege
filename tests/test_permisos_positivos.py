@@ -26,6 +26,8 @@ class TestPermisosPositivos(unittest.TestCase):
     def usuario(rol, *, usuario_id=10, ciclos=None, subrogante_de=None):
         return SimpleNamespace(
             id=usuario_id,
+            activo=True,
+            is_authenticated=True,
             rol=SimpleNamespace(nombre=rol),
             ciclos=[] if ciclos is None else ciclos,
             subrogante_de=subrogante_de,
@@ -95,23 +97,14 @@ class TestPermisosPositivos(unittest.TestCase):
         )
 
     def test_referente_subrogante_puede_abrir_ciclo_subrogado(self):
-        titular = SimpleNamespace(ciclos=[SimpleNamespace(id=2)])
+        titular = SimpleNamespace(activo=True, rol=SimpleNamespace(nombre='Referente'), ciclos=[SimpleNamespace(id=2)])
         self.comprobar_detalle_permitido(
             self.usuario('Referente', ciclos=[SimpleNamespace(id=1)], subrogante_de=titular),
             self.caso(ciclo=2),
         )
 
-    def test_referente_sin_ciclos_tiene_acceso_global_actualmente(self):
-        # Comportamiento heredado; no implica que deba seguir existiendo.
-        self.comprobar_detalle_permitido(self.usuario('Referente'), self.caso(ciclo=2))
-
-    def test_visualizador_sin_ciclos_tiene_acceso_global_actualmente(self):
-        # Comportamiento heredado; posteriormente debe validarse la regla global.
-        self.comprobar_detalle_permitido(self.usuario('Visualizador'), self.caso(ciclo=2))
-
-    def test_visualizador_con_ciclo_no_accede_a_otro_actualmente(self):
-        # Esta restriccion actual difiere de la politica global confirmada.
-        usuario = self.usuario('Visualizador', ciclos=[SimpleNamespace(id=1)])
+    def test_referente_sin_ciclos_no_tiene_acceso_global(self):
+        usuario = self.usuario('Referente')
         caso = self.caso(ciclo=2)
         consulta_caso = MagicMock()
         consulta_caso.get_or_404.return_value = caso
@@ -120,7 +113,14 @@ class TestPermisosPositivos(unittest.TestCase):
                  patch.object(modulo_casos.Caso, 'query', consulta_caso):
                 with self.assertRaises(Forbidden):
                     modulo_casos.ver_caso.__wrapped__(1)
-        consulta_caso.get_or_404.assert_called_once_with(1)
+
+    def test_visualizador_sin_ciclos_tiene_acceso_global_actualmente(self):
+        # Comportamiento heredado; posteriormente debe validarse la regla global.
+        self.comprobar_detalle_permitido(self.usuario('Visualizador'), self.caso(ciclo=2))
+
+    def test_visualizador_con_ciclo_accede_a_otro_por_politica_global(self):
+        usuario = self.usuario('Visualizador', ciclos=[SimpleNamespace(id=1)])
+        self.comprobar_detalle_permitido(usuario, self.caso(ciclo=2))
 
 
 if __name__ == '__main__':

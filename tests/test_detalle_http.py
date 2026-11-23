@@ -190,23 +190,18 @@ class TestDetalleHTTP(unittest.TestCase):
         self._permitido(22, 1, puede_asignar=True)
 
     # Diferencias conocidas contra la politica OBJETIVO; no ocultarlas.
-    @unittest.expectedFailure
     def test_14_OBJETIVO_epi_puede_ver_su_recinto(self):
         self._permitido(17, 1, puede_asignar=False)
 
-    @unittest.expectedFailure
     def test_15_OBJETIVO_urgencia_puede_ver_su_recinto(self):
         self._permitido(18, 2, puede_asignar=False)
 
-    @unittest.expectedFailure
     def test_16_OBJETIVO_visualizador_global_con_ciclo(self):
         self._permitido(12, 2, puede_asignar=False)
 
-    @unittest.expectedFailure
     def test_17_OBJETIVO_referente_sin_ciclos_no_es_global(self):
         self._denegado(14, 1)
 
-    @unittest.expectedFailure
     def test_18_OBJETIVO_usuario_inactivo_denegado(self):
         self._denegado(20, 1)
 

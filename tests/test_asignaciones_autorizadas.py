@@ -29,6 +29,7 @@ class TestAsignacionesAutorizadas(unittest.TestCase):
             ciclos=list(ciclos or []),
             subrogante_de=None,
             activo=True,
+            is_authenticated=True,
             email="profesional@example.invalid",
         )
 
@@ -50,7 +51,17 @@ class TestAsignacionesAutorizadas(unittest.TestCase):
             datos["ts_id"] = str(ts_id)
         if coord_id is not None:
             datos["coord_id"] = str(coord_id)
-        usuario = self.usuario(rol=rol)
+        # El Referente de prueba debe pertenecer al ciclo del caso.
+        ciclos_usuario = (
+            [SimpleNamespace(id=caso.ciclo_vital_id)]
+            if rol == "Referente"
+            else None
+        )
+
+        usuario = self.usuario(
+            rol=rol,
+            ciclos=ciclos_usuario
+        )
         with self.app.test_request_context("/casos/ver/1", method="POST", data=datos):
             with ExitStack() as stack:
                 stack.enter_context(patch.object(modulo, "current_user", usuario))

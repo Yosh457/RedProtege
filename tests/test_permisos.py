@@ -27,6 +27,8 @@ class TestPermisosCasos(unittest.TestCase):
     def usuario(rol, *, id=10, ciclos=None, subrogante_de=None):
         return SimpleNamespace(
             id=id,
+            activo=True,
+            is_authenticated=True,
             rol=SimpleNamespace(nombre=rol),
             ciclos=[] if ciclos is None else ciclos,
             subrogante_de=subrogante_de,
@@ -75,23 +77,24 @@ class TestPermisosCasos(unittest.TestCase):
             self.caso(ciclo=2),
         )
 
-    def test_visualizador_no_ve_caso_fuera_de_sus_ciclos(self):
-        self.probar_detalle_denegado(
-            self.usuario('Visualizador', ciclos=[SimpleNamespace(id=1)]),
-            self.caso(ciclo=2),
-        )
+    def test_visualizador_ve_caso_fuera_de_sus_ciclos(self):
+        usuario = self.usuario('Visualizador', ciclos=[SimpleNamespace(id=1)])
+        caso = self.caso(ciclo=2)
+        with self.app.test_request_context('/casos/ver/1'):
+            with patch.object(modulo_casos, 'current_user', usuario), \
+                 patch.object(modulo_casos.Caso.query, 'get_or_404', return_value=caso), \
+                 patch.object(modulo_casos, 'render_template', return_value='ACCESO_PERMITIDO'):
+                resultado = modulo_casos.ver_caso.__wrapped__(1)
+        self.assertEqual(resultado, 'ACCESO_PERMITIDO')
 
     def test_solicitante_no_puede_abrir_detalle_de_caso(self):
         self.probar_detalle_denegado(
             self.usuario('Solicitante'), self.caso()
         )
 
-    def test_coordinador_epi_no_puede_abrir_detalle_actualmente(self):
-        # Caracteriza la diferencia actual: su bandeja/exportación admiten
-        # acceso global, pero la ruta ver_caso no lo incluye explícitamente.
-        self.probar_detalle_denegado(
-            self.usuario('Coordinador EPI'), self.caso()
-        )
+    def test_coordinador_epi_sin_recintos_no_puede_abrir_detalle(self):
+        # Denegacion por defecto cuando no hay recintos autorizados.
+        self.probar_detalle_denegado(self.usuario('Coordinador EPI'), self.caso())
 
     def test_trabajador_social_ajeno_no_descarga_acta(self):
         with self.app.test_request_context('/casos/acta/1'):
