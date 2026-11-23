@@ -24,6 +24,12 @@ usuario_ciclos = db.Table('usuario_ciclos',
     db.Column('ciclo_id', db.Integer, db.ForeignKey('catalogo_ciclos.id'), primary_key=True)
 )
 
+# Relacion M:N entre usuarios y recintos notificadores autorizados.
+usuario_recintos = db.Table('usuario_recintos',
+    db.Column('usuario_id', db.Integer, db.ForeignKey('usuarios.id', ondelete='CASCADE'), primary_key=True),
+    db.Column('recinto_id', db.Integer, db.ForeignKey('catalogo_recintos.id', ondelete='RESTRICT'), primary_key=True)
+)
+
 # --- CATÁLOGOS ---
 
 class Rol(db.Model):
@@ -46,6 +52,7 @@ class CatalogoRecinto(db.Model):
     nombre = db.Column(db.String(100), nullable=False, unique=True)
     activo = db.Column(db.Boolean, default=True)
     casos = db.relationship('Caso', back_populates='recinto_notifica')
+    usuarios_autorizados = db.relationship('Usuario', secondary=usuario_recintos, back_populates='recintos')
 
 class CatalogoVulneracion(db.Model):
     __tablename__ = 'catalogo_vulneraciones'
@@ -91,6 +98,9 @@ class Usuario(db.Model, UserMixin):
 
     # ✅ NUEVA RELACIÓN M:N (FASE 1): Permite gestionar múltiples ciclos
     ciclos = db.relationship('CatalogoCiclo', secondary=usuario_ciclos, backref=db.backref('usuarios_asociados', lazy='dynamic'))
+
+    # Recintos para autorizacion territorial. Vacio significa sin acceso territorial.
+    recintos = db.relationship('CatalogoRecinto', secondary=usuario_recintos, back_populates='usuarios_autorizados')
     
     # --- NUEVO: SUBROGANCIA (Delegación de funciones) ---
     # Indica que ESTE usuario está actuando como subrogante del usuario referenciado aquí.
