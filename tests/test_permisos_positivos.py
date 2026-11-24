@@ -42,6 +42,7 @@ class TestPermisosPositivos(unittest.TestCase):
             asignado_a_usuario_id=ts_anterior,
             asignado_coord_id=coordinador,
             estado='EN_SEGUIMIENTO',
+            acta_pdf_path=None,
         )
 
     def comprobar_detalle_permitido(self, usuario, caso):

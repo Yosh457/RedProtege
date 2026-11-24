@@ -78,13 +78,29 @@ class TestPermisosCasos(unittest.TestCase):
         )
 
     def test_visualizador_ve_caso_fuera_de_sus_ciclos(self):
-        usuario = self.usuario('Visualizador', ciclos=[SimpleNamespace(id=1)])
+        usuario = self.usuario(
+            'Visualizador',
+            ciclos=[SimpleNamespace(id=1)]
+        )
+
         caso = self.caso(ciclo=2)
+
+        # Simular la consulta completa para evitar conexiones a MySQL.
+        consulta_caso = SimpleNamespace(
+            get_or_404=lambda _id: caso
+        )
+
         with self.app.test_request_context('/casos/ver/1'):
             with patch.object(modulo_casos, 'current_user', usuario), \
-                 patch.object(modulo_casos.Caso.query, 'get_or_404', return_value=caso), \
-                 patch.object(modulo_casos, 'render_template', return_value='ACCESO_PERMITIDO'):
+                patch.object(modulo_casos.Caso, 'query', consulta_caso), \
+                patch.object(
+                    modulo_casos,
+                    'render_template',
+                    return_value='ACCESO_PERMITIDO'
+                ):
+
                 resultado = modulo_casos.ver_caso.__wrapped__(1)
+
         self.assertEqual(resultado, 'ACCESO_PERMITIDO')
 
     def test_solicitante_no_puede_abrir_detalle_de_caso(self):
@@ -102,9 +118,8 @@ class TestPermisosCasos(unittest.TestCase):
                               self.usuario('Trabajador(a) Social')), \
                  patch.object(modulo_casos.Caso, 'query',
                               SimpleNamespace(get_or_404=lambda _id: self.caso(ts=99))):
-                respuesta = modulo_casos.descargar_acta.__wrapped__(1)
-                self.assertEqual(respuesta.status_code, 302)
-                self.assertTrue(respuesta.headers['Location'].endswith('/casos/'))
+                with self.assertRaises(Forbidden):
+                    modulo_casos.descargar_acta.__wrapped__(1)
 
     def test_coordinador_ciclo_no_gestiona_caso(self):
         with self.app.test_request_context('/casos/gestionar/1'):

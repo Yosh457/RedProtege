@@ -179,7 +179,7 @@ class TestExportacionesActasHTTP(unittest.TestCase):
 
     def test_11_ts_ajeno_no_descarga(self):
         r, servido = self.peticion('/casos/acta/1', 21, simular_pdf=True)
-        self.assertEqual(r.status_code, 302)
+        self.assertEqual(r.status_code, 403)
         self.assertFalse(servido)
 
     # Politica OBJETIVO: estas discrepancias deben desaparecer en 1.3-C.4-B/C.
@@ -197,19 +197,16 @@ class TestExportacionesActasHTTP(unittest.TestCase):
         r, _ = self.peticion('/casos/exportar', 20)
         self.assertEqual(r.status_code, 403)
 
-    @unittest.expectedFailure
     def test_16_OBJETIVO_epi_no_descarga_acta_de_recinto_ajeno(self):
         r, servido = self.peticion('/casos/acta/2', 17, simular_pdf=True)
         self.assertEqual(r.status_code, 403)
         self.assertFalse(servido)
 
-    @unittest.expectedFailure
     def test_17_OBJETIVO_urgencia_descarga_acta_de_su_recinto(self):
         r, servido = self.peticion('/casos/acta/2', 18, simular_pdf=True)
         self.assertEqual(r.status_code, 200)
         self.assertTrue(servido)
 
-    @unittest.expectedFailure
     def test_18_OBJETIVO_referente_sin_ciclos_no_descarga_acta(self):
         r, servido = self.peticion('/casos/acta/1', 14, simular_pdf=True)
         self.assertEqual(r.status_code, 403)

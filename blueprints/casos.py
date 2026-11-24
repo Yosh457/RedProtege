@@ -3,10 +3,12 @@ import io
 from datetime import datetime, timedelta, date
 from flask import Blueprint, render_template, abort, request, flash, redirect, url_for, send_file
 from flask_login import login_required, current_user
+from werkzeug.exceptions import HTTPException
 from sqlalchemy import case, or_, func
 from models import db, Caso, Usuario, Rol, AuditoriaCaso, CatalogoEstablecimiento, CatalogoInstitucion, CatalogoRecinto, obtener_hora_chile, CasoGestion
 from utils import check_password_change, registrar_log, enviar_aviso_asignacion, generar_acta_cierre_pdf, enviar_aviso_cierre, enviar_aviso_subrogancia, es_rut_valido, safe_int, enviar_reporte_estadistico_masivo
-from utils.autorizacion import aplicar_filtro_casos, puede_realizar, puede_acceder_caso, puede_exportar_ambito
+from utils.autorizacion import aplicar_filtro_casos, puede_realizar, puede_acceder_caso, puede_exportar_ambito, puede_descargar_acta_historica
+from utils.rutas_actas import resolver_ruta_acta
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -557,32 +559,14 @@ def ver_caso(id):
         and puede_acceder_caso(current_user, caso, 'casos.anular')
     )
 
-    # Descargar acta: interseccion de politica objetivo y controles heredados
-    # del endpoint /casos/acta/<id>. Se evita mostrar un enlace que aun daria
-    # acceso denegado hasta modernizar la descarga en la fase correspondiente.
-    descarga_heredada = rol_nombre in ('Admin', 'Torre Control', 'Coordinador EPI')
-    if rol_nombre in ('Referente', 'Visualizador'):
-        ciclos_propios = list(getattr(current_user, 'ciclos', None) or [])
-        mismo_ciclo = not ciclos_propios or any(
-            c.id == caso.ciclo_vital_id for c in ciclos_propios
+    # La ruta de descarga vuelve a validar ambos permisos.
+    puede_descargar_acta_vista = bool(caso.acta_pdf_path) and (
+        puede_acceder_caso(
+            current_user,
+            caso,
+            'casos.descargar_acta'
         )
-        titular = getattr(current_user, 'subrogante_de', None)
-        ciclo_subrogado = bool(titular and getattr(titular, 'ciclos', None) and any(
-            c.id == caso.ciclo_vital_id for c in titular.ciclos
-        ))
-        descarga_heredada = mismo_ciclo or ciclo_subrogado
-    elif rol_nombre == 'Trabajador(a) Social':
-        descarga_heredada = (
-            caso.asignado_ts_id == current_user.id
-            or caso.asignado_a_usuario_id == current_user.id
-            or caso.usuario_cierre_id == current_user.id
-        )
-    elif rol_nombre == 'Coordinador Ciclo':
-        descarga_heredada = caso.asignado_coord_id == current_user.id
-
-    puede_descargar_acta_vista = (
-        descarga_heredada
-        and puede_acceder_caso(current_user, caso, 'casos.descargar_acta')
+        or puede_descargar_acta_historica(current_user, caso)
     )
 
     return render_template(
@@ -1046,49 +1030,15 @@ def descargar_acta(id):
     rol_nombre = current_user.rol.nombre
 
     # =========================================================
-    # 1. VALIDACIÓN DE PERMISOS
+    # 1. AUTORIZACIÓN CENTRALIZADA DEL DOCUMENTO
     # =========================================================
-    permitido = False
-
-    # --- Roles Globales ---
-    if rol_nombre in ['Admin', 'Torre Control', 'Coordinador EPI']:
-        permitido = True
-
-    # --- Referente / Visualizador (por ciclo + subrogancia) ---
-    elif rol_nombre in ['Referente', 'Visualizador']:
-        # ✅ FASE 2: Comprobar acceso en lista M:N
-        acceso_propio = (
-            not current_user.ciclos or
-            caso.ciclo_vital_id in [c.id for c in current_user.ciclos]
-        )
-
-        acceso_subrogado = False
-        if current_user.subrogante_de and current_user.subrogante_de.ciclos:
-            if caso.ciclo_vital_id in [c.id for c in current_user.subrogante_de.ciclos]:
-                acceso_subrogado = True
-
-        if acceso_propio or acceso_subrogado:
-            permitido = True
-
-    # --- Trabajador(a) Social ---
-    elif rol_nombre == 'Trabajador(a) Social':
-        es_asignado = (
-            caso.asignado_ts_id == current_user.id or
-            caso.asignado_a_usuario_id == current_user.id  # legacy
-        )
-        es_quien_cerro = (caso.usuario_cierre_id == current_user.id)
-
-        if es_asignado or es_quien_cerro:
-            permitido = True
-
-    # --- Coordinador de Ciclo ---
-    elif rol_nombre == 'Coordinador Ciclo':
-        if caso.asignado_coord_id == current_user.id:
-            permitido = True
-
-    if not permitido:
-        flash("No tienes permisos para descargar este documento.", "danger")
-        return redirect(url_for('casos.index'))
+    # La excepción histórica se limita al TS que cerró un caso CERRADO.
+    # Una denegación devuelve 403 antes de resolver la ruta física o servir PDF.
+    if not (
+        puede_acceder_caso(current_user, caso, 'casos.descargar_acta')
+        or puede_descargar_acta_historica(current_user, caso)
+    ):
+        abort(403)
 
     # =========================================================
     # 2. VALIDAR EXISTENCIA DE ACTA EN BD
@@ -1102,25 +1052,13 @@ def descargar_acta(id):
         # 3. CONSTRUCCIÓN Y SEGURIDAD DE RUTA (PATH TRAVERSAL)
         # =====================================================
 
-        # Base del proyecto (un nivel arriba de blueprints/)
+        # La funcion de rutas normaliza separadores, rechaza escapes y
+        # resuelve enlaces simbolicos antes de entregar el archivo.
         BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-
-        # Normalizar ruta almacenada en BD
-        ruta_relativa = caso.acta_pdf_path.replace('\\', '/').lstrip('/')
-
-        # Resolver ruta absoluta final
-        path_absoluto = os.path.abspath(os.path.join(BASE_DIR, ruta_relativa))
-
-        # Carpeta autorizada (jaula)
-        carpeta_actas = os.path.abspath(os.path.join(BASE_DIR, 'uploads', 'actas'))
-        carpeta_con_sep = os.path.join(carpeta_actas, '')  # asegura separador final
-
-        # Bloqueo de Path Traversal
-        if not path_absoluto.startswith(carpeta_con_sep):
-            registrar_log(
-                "Seguridad",
-                f"ALERTA: Intento de Path Traversal por {current_user.email}. Path: {path_absoluto}"
-            )
+        try:
+            path_absoluto = resolver_ruta_acta(BASE_DIR, caso.acta_pdf_path)
+        except ValueError:
+            registrar_log('Seguridad', f'Acta con ruta no autorizada: caso={caso.id}, usuario={current_user.id}')
             abort(403)
 
         # =====================================================
@@ -1155,6 +1093,8 @@ def descargar_acta(id):
             download_name=nombre_descarga
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error sirviendo archivo: {e}")
         flash('Error interno al intentar descargar el archivo.', 'danger')

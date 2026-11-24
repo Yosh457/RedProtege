@@ -32,10 +32,16 @@ class TestConsistenciaAsignaciones(unittest.TestCase):
     @staticmethod
     def caso(ts=None, coord=None, estado="EN_SEGUIMIENTO"):
         return SimpleNamespace(
-            id=1, folio_atencion="FICT-001", ciclo_vital_id=2,
-            estado=estado, asignado_ts_id=ts,
-            asignado_a_usuario_id=ts, asignado_coord_id=coord,
-            asignado_por_usuario_id=None, asignado_at=None,
+            id=1,
+            folio_atencion="FICT-001",
+            ciclo_vital_id=2,
+            estado=estado,
+            asignado_ts_id=ts,
+            asignado_a_usuario_id=ts,
+            asignado_coord_id=coord,
+            asignado_por_usuario_id=None,
+            asignado_at=None,
+            acta_pdf_path=None,
         )
 
     def ejecutar(self, *, caso, ts_id=None, coord_id=None,
