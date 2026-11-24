@@ -22,7 +22,12 @@ class TestGestionAutorizada(unittest.TestCase):
 
     @staticmethod
     def usuario(rol="Admin", identificador=10):
-        return SimpleNamespace(id=identificador, rol=SimpleNamespace(nombre=rol))
+        return SimpleNamespace(
+            id=identificador,
+            rol=SimpleNamespace(nombre=rol),
+            activo=True,
+            is_authenticated=True,
+        )
 
     @staticmethod
     def caso(ts=20, legacy_ts=None):

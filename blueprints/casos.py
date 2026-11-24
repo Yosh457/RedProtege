@@ -554,12 +554,9 @@ def ver_caso(id):
             flash('Error al procesar la asignación.', 'danger')
 
 
-    # Fase 1.3-C.3-C: permisos de presentacion, nunca sustituyen validaciones HTTP.
-    # Gestionar: el endpoint vigente solo admite Admin, Torre y TS asignado.
-    rol_gestion_vigente = rol_nombre in ('Admin', 'Torre Control', 'Trabajador(a) Social')
-    puede_gestionar_vista = (
-        rol_gestion_vigente
-        and puede_acceder_caso(current_user, caso, 'casos.gestionar')
+    # Fase 1.3-C.5-C: mostrar gestionar con la misma politica del endpoint.
+    puede_gestionar_vista = puede_acceder_caso(
+        current_user, caso, 'casos.gestionar'
     )
 
     # Anular: el endpoint vigente solo admite Admin y Torre Control.
@@ -598,33 +595,11 @@ def gestionar_caso(id):
     (o Admin) ingrese la gestión clínica del caso.
     """
     caso = Caso.query.get_or_404(id)
-    rol_nombre = current_user.rol.nombre
 
-    #Si el caso está cerrado, no se permite gestionar.
-    if caso.estado == 'CERRADO':
-        flash('El caso ya está cerrado. No es posible editar la gestión.', 'danger')
-        return redirect(url_for('casos.ver_caso', id=caso.id))
-    
-    # Si el caso está anulado, tampoco se permite gestionar.
-    if caso.estado == 'ANULADO':
-        flash('El caso está anulado. No es posible editar la gestión.', 'danger')
-        return redirect(url_for('casos.ver_caso', id=caso.id))
-
-    # 1. Validar Permisos para GESTIONAR (Más estricto que ver)
-    puede_gestionar = False
-
-    # 🔥 CAMBIO: Agregamos a 'Torre Control' junto al Admin
-    if rol_nombre in ['Admin', 'Torre Control']:
-        puede_gestionar = True
-    elif rol_nombre == 'Trabajador(a) Social':
-        # Validar asignación (Dual: nueva o legacy)
-        if (caso.asignado_ts_id == current_user.id) or (caso.asignado_a_usuario_id == current_user.id):
-            puede_gestionar = True
-    
-    # Referente, Coordinador Ciclo: solo visualizan, no gestionan
-    if not puede_gestionar:
-        flash('No tienes permisos para gestionar este caso.', 'danger')
-        return redirect(url_for('casos.ver_caso', id=caso.id))
+    # Fase 1.3-C.5-C: permiso de gestion por rol, asignacion, recinto y estado.
+    # Se valida antes de consultar catalogos o alterar datos clinicos.
+    if not puede_acceder_caso(current_user, caso, 'casos.gestionar'):
+        abort(403)
 
     # Cargar catálogos necesarios para el formulario de gestión
     establecimientos = CatalogoEstablecimiento.query.filter_by(activo=True).order_by(CatalogoEstablecimiento.nombre).all()

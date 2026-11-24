@@ -127,9 +127,8 @@ class TestPermisosCasos(unittest.TestCase):
                               self.usuario('Coordinador Ciclo', id=30)), \
                  patch.object(modulo_casos.Caso, 'query',
                               SimpleNamespace(get_or_404=lambda _id: self.caso(coordinador=30))):
-                respuesta = modulo_casos.gestionar_caso.__wrapped__(1)
-                self.assertEqual(respuesta.status_code, 302)
-                self.assertTrue(respuesta.headers['Location'].endswith('/casos/ver/1'))
+                with self.assertRaises(Forbidden):
+                    modulo_casos.gestionar_caso.__wrapped__(1)
 
 if __name__ == '__main__':
     unittest.main()

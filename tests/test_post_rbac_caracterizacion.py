@@ -18,6 +18,8 @@ from werkzeug.exceptions import HTTPException
 from app import create_app
 from blueprints import casos as modulo
 
+from tests import test_gestion_autorizada as fixtures_gestion
+
 
 class TestPostRBACCaracterizacion(unittest.TestCase):
     @classmethod
@@ -93,10 +95,10 @@ class TestPostRBACCaracterizacion(unittest.TestCase):
         r.log.assert_not_called()
 
     # --- Comportamientos existentes que no deben deteriorarse ---
-    def test_01_visualizador_no_gestiona_actualmente(self):
+    def test_01_visualizador_no_gestiona_403(self):
         r = self.ejecutar("gestionar_caso", "/casos/gestionar/1",
                           self.usuario("Visualizador"), self.caso())
-        self.assertEqual(r.status, 302)
+        self.assertEqual(r.status, 403)
         self.sin_efectos(r)
 
     def test_02_ts_ajeno_no_cierra_actualmente(self):
@@ -145,21 +147,50 @@ class TestPostRBACCaracterizacion(unittest.TestCase):
         self.sin_efectos(r)
 
     # --- Objetivos pendientes: se activan al modernizar endpoints ---
-    @unittest.expectedFailure
     def test_09_OBJETIVO_visualizador_gestion_rechazada_403(self):
         r = self.ejecutar("gestionar_caso", "/casos/gestionar/1",
                           self.usuario("Visualizador"), self.caso())
         self.assertEqual(r.status, 403)
         self.sin_efectos(r)
 
-    @unittest.expectedFailure
     def test_10_OBJETIVO_urgencia_gestiona_su_recinto(self):
-        r = self.ejecutar("gestionar_caso", "/casos/gestionar/1",
-                          self.usuario("Coordinador(a) de Urgencia", recintos=[1]),
-                          self.caso(recinto=1))
-        self.assertEqual(r.status, 200)
+        # Caso clinico completo, utilizando la fabrica existente.
+        caso = fixtures_gestion.TestGestionAutorizada.caso()
+        caso.recinto_notifica_id = 1
 
-    @unittest.expectedFailure
+        usuario = self.usuario(
+            "Coordinador(a) de Urgencia",
+            recintos=[1]
+        )
+
+        r = self.ejecutar(
+            "gestionar_caso",
+            "/casos/gestionar/1",
+            usuario,
+            caso,
+            data={}
+        )
+
+        # Una gestion POST exitosa redirige al detalle.
+        # HTTP 200 indicaria que se volvio a mostrar el formulario.
+        self.assertEqual(r.status, 302)
+
+        # La gestion debe persistirse y generar auditoria.
+        r.sesion.commit.assert_called_once()
+        r.sesion.add.assert_called_once()
+
+        auditoria = r.sesion.add.call_args.args[0]
+        self.assertEqual(auditoria.accion, "GESTION_CLINICA")
+        self.assertEqual(auditoria.caso_id, caso.id)
+        self.assertEqual(auditoria.usuario_id, usuario.id)
+
+        r.sesion.rollback.assert_not_called()
+
+        # La gestion no debe generar documentos ni notificaciones.
+        r.pdf.assert_not_called()
+        r.mail1.assert_not_called()
+        r.mail2.assert_not_called()
+
     def test_11_OBJETIVO_urgencia_ajeno_denegado_403(self):
         r = self.ejecutar("gestionar_caso", "/casos/gestionar/1",
                           self.usuario("Coordinador(a) de Urgencia", recintos=[3]),

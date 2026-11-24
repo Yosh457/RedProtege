@@ -10,6 +10,8 @@ from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from werkzeug.exceptions import Forbidden
+
 from app import create_app
 from blueprints import casos as modulo_casos
 
@@ -64,10 +66,18 @@ class TestPostDenegaciones(unittest.TestCase):
                 aviso_subrogancia = stack.enter_context(patch.object(modulo_casos, "enviar_aviso_subrogancia"))
                 # Se salta unicamente @login_required: se prueba la politica
                 # de la funcion, no una sesion HTTP real (cubierta aparte).
-                respuesta = funcion.__wrapped__(1) if caso is not None else funcion.__wrapped__()
-
-        self.assertEqual(respuesta.status_code, 302)
-        self.assertTrue(respuesta.headers["Location"].endswith(destino), respuesta.headers["Location"])
+                # Gestion clinica ahora deniega mediante 403. Las otras rutas
+                # conservan temporalmente sus redirecciones heredadas.
+                if funcion is modulo_casos.gestionar_caso:
+                    with self.assertRaises(Forbidden):
+                        funcion.__wrapped__(1)
+                else:
+                    respuesta = funcion.__wrapped__(1) if caso is not None else funcion.__wrapped__()
+                    self.assertEqual(respuesta.status_code, 302)
+                    self.assertTrue(
+                        respuesta.headers["Location"].endswith(destino),
+                        respuesta.headers["Location"],
+                    )
         if caso is not None:
             consulta_caso.get_or_404.assert_called_once_with(1)
         else:
