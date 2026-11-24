@@ -330,8 +330,17 @@ def ver_caso(id):
     funcionarios_ts = []
     funcionarios_coord = []
 
-    # 🔥 CAMBIO AQUÍ: Agregamos a 'Torre Control' a la lista de los que pueden asignar
-    puede_asignar = rol_nombre in ['Admin', 'Referente', 'Torre Control']
+    # Fase 1.3-C.5-B: ambas operaciones de asignacion requieren permiso
+    # explicito sobre ESTE caso, su ambito y su estado actual.
+    puede_asignar = (
+        puede_acceder_caso(current_user, caso, 'casos.asignar_ts')
+        and puede_acceder_caso(current_user, caso, 'casos.asignar_coord')
+    )
+
+    # Una solicitud POST no autorizada se deniega antes de consultar usuarios,
+    # ejecutar asignaciones, auditar o enviar correo.
+    if request.method == 'POST' and not puede_asignar:
+        abort(403)
 
     if puede_asignar and caso.estado not in ['CERRADO', 'ANULADO']:
         
