@@ -559,10 +559,9 @@ def ver_caso(id):
         current_user, caso, 'casos.gestionar'
     )
 
-    # Anular: el endpoint vigente solo admite Admin y Torre Control.
-    puede_anular_vista = (
-        rol_nombre in ('Admin', 'Torre Control')
-        and puede_acceder_caso(current_user, caso, 'casos.anular')
+    # Fase 1.3-C.5-D: el boton refleja el permiso real de anulacion.
+    puede_anular_vista = puede_acceder_caso(
+        current_user, caso, 'casos.anular'
     )
 
     # La ruta de descarga vuelve a validar ambos permisos.
@@ -856,31 +855,10 @@ def gestionar_caso(id):
 @login_required
 def cerrar_caso(id):
     caso = Caso.query.get_or_404(id)
-    rol_nombre = current_user.rol.nombre
-
-    # 1. Validar Permisos (Admin o Trabajador Social Asignado)
-    puede_cerrar = False
-    
-    # 🔥 CAMBIO: Agregamos a 'Torre Control' junto al Admin
-    if rol_nombre in ['Admin', 'Torre Control']:
-        puede_cerrar = True
-    elif rol_nombre == 'Trabajador(a) Social':
-        # Validar asignación dual (nuevo o legacy)
-        if (caso.asignado_ts_id == current_user.id) or (caso.asignado_a_usuario_id == current_user.id):
-            puede_cerrar = True
-    
-    # Coord Ciclo -> NO cierra caso, solo visualiza
-    if not puede_cerrar:
-        flash('No tienes permisos para cerrar este caso.', 'danger')
-        return redirect(url_for('casos.ver_caso', id=caso.id))
-
-    if caso.estado == 'CERRADO':
-        flash('El caso ya se encuentra cerrado.', 'warning')
-        return redirect(url_for('casos.ver_caso', id=caso.id))
-    
-    if caso.estado == 'ANULADO':
-        flash('El caso está anulado y no puede cerrarse.', 'warning')
-        return redirect(url_for('casos.ver_caso', id=caso.id))
+    # Fase 1.3-C.5-D: rol, usuario activo, asignacion y estado del caso.
+    # Rechazar antes de cambiar estado, auditar, generar PDF o enviar correos.
+    if not puede_acceder_caso(current_user, caso, 'casos.cerrar'):
+        abort(403)
 
     try:
         # 2. Actualizar Estado en BD (Primer Commit)
@@ -944,22 +922,9 @@ def anular_caso(id):
     # Anula lógicamente un caso sin borrarlo físicamente de la base de datos.
     # Se usa para duplicados, ingresos erróneos o registros creados por accidente.
     caso = Caso.query.get_or_404(id)
-    rol_nombre = current_user.rol.nombre
-
-    # Solo Admin y Torre Control pueden anular
-    if rol_nombre not in ['Admin', 'Torre Control']:
-        flash('No tienes permisos para anular casos.', 'danger')
-        return redirect(url_for('casos.ver_caso', id=caso.id))
-    
-    # Evitamos anular dos veces el mismo caso.
-    if caso.estado == 'ANULADO':
-        flash('El caso ya se encuentra anulado.', 'warning')
-        return redirect(url_for('casos.ver_caso', id=caso.id))
-    
-    # Política recomendada: no permitir anular un caso ya cerrado para no mezclar flujos.
-    if caso.estado == 'CERRADO':
-        flash('Un caso cerrado no puede anularse.', 'warning')
-        return redirect(url_for('casos.ver_caso', id=caso.id))
+    # Fase 1.3-C.5-D: validar antes de examinar motivo o mutar el caso.
+    if not puede_acceder_caso(current_user, caso, 'casos.anular'):
+        abort(403)
 
     motivo = request.form.get('motivo_anulacion', '').strip()
     if not motivo:

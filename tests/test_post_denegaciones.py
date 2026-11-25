@@ -30,6 +30,8 @@ class TestPostDenegaciones(unittest.TestCase):
             rol=SimpleNamespace(nombre=rol),
             email="usuario@example.invalid",
             nombre_completo="Usuario Ficticio",
+            activo=True,
+            is_authenticated=True,
         )
 
     @staticmethod
@@ -42,7 +44,7 @@ class TestPostDenegaciones(unittest.TestCase):
             folio_atencion="FICTICIO-001",
         )
 
-    def comprobar_rechazo(self, funcion, ruta, usuario, caso=None, data=None, destino="/casos/ver/1"):
+    def comprobar_rechazo(self, funcion, ruta, usuario, caso=None, data=None, destino="/casos/ver/1", espera_403=False):
         """Aisla consultas/efectos externos y exige que el rechazo sea sin escritura."""
         consulta_caso = MagicMock()
         consulta_caso.get_or_404.return_value = caso
@@ -66,9 +68,9 @@ class TestPostDenegaciones(unittest.TestCase):
                 aviso_subrogancia = stack.enter_context(patch.object(modulo_casos, "enviar_aviso_subrogancia"))
                 # Se salta unicamente @login_required: se prueba la politica
                 # de la funcion, no una sesion HTTP real (cubierta aparte).
-                # Gestion clinica ahora deniega mediante 403. Las otras rutas
-                # conservan temporalmente sus redirecciones heredadas.
-                if funcion is modulo_casos.gestionar_caso:
+                # Gestion, cierre y anulacion denegadas son 403; la validacion
+                # de motivo faltante en una anulacion autorizada conserva 302.
+                if funcion is modulo_casos.gestionar_caso or espera_403:
                     with self.assertRaises(Forbidden):
                         funcion.__wrapped__(1)
                 else:
@@ -118,32 +120,32 @@ class TestPostDenegaciones(unittest.TestCase):
     def test_coordinador_ciclo_no_cierra_por_post(self):
         caso = self.caso()
         self.comprobar_rechazo(modulo_casos.cerrar_caso, "/casos/cerrar/1",
-                              self.usuario("Coordinador Ciclo"), caso)
+                              self.usuario("Coordinador Ciclo"), caso, espera_403=True)
         self.assertEqual(caso.estado, "EN_SEGUIMIENTO")
 
     def test_trabajador_social_ajeno_no_cierra_por_post(self):
         self.comprobar_rechazo(modulo_casos.cerrar_caso, "/casos/cerrar/1",
-                              self.usuario("Trabajador(a) Social"), self.caso(ts_id=99))
+                              self.usuario("Trabajador(a) Social"), self.caso(ts_id=99), espera_403=True)
 
     def test_admin_no_cierra_caso_ya_cerrado(self):
         self.comprobar_rechazo(modulo_casos.cerrar_caso, "/casos/cerrar/1",
-                              self.usuario("Admin"), self.caso(estado="CERRADO"))
+                              self.usuario("Admin"), self.caso(estado="CERRADO"), espera_403=True)
 
     def test_torre_control_no_cierra_caso_anulado(self):
         self.comprobar_rechazo(modulo_casos.cerrar_caso, "/casos/cerrar/1",
-                              self.usuario("Torre Control"), self.caso(estado="ANULADO"))
+                              self.usuario("Torre Control"), self.caso(estado="ANULADO"), espera_403=True)
 
     def test_trabajador_social_no_anula_por_post(self):
         caso = self.caso(ts_id=10)
         self.comprobar_rechazo(modulo_casos.anular_caso, "/casos/anular/1",
                               self.usuario("Trabajador(a) Social"), caso,
-                              data={"motivo_anulacion": "Ejemplo ficticio"})
+                              data={"motivo_anulacion": "Ejemplo ficticio"}, espera_403=True)
         self.assertEqual(caso.estado, "EN_SEGUIMIENTO")
 
     def test_admin_no_anula_caso_cerrado(self):
         self.comprobar_rechazo(modulo_casos.anular_caso, "/casos/anular/1",
                               self.usuario("Admin"), self.caso(estado="CERRADO"),
-                              data={"motivo_anulacion": "Ejemplo ficticio"})
+                              data={"motivo_anulacion": "Ejemplo ficticio"}, espera_403=True)
 
     def test_admin_no_anula_sin_motivo(self):
         self.comprobar_rechazo(modulo_casos.anular_caso, "/casos/anular/1",

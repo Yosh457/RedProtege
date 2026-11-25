@@ -104,26 +104,26 @@ class TestPostRBACCaracterizacion(unittest.TestCase):
     def test_02_ts_ajeno_no_cierra_actualmente(self):
         r = self.ejecutar("cerrar_caso", "/casos/cerrar/1",
                           self.usuario("Trabajador(a) Social", uid=10), self.caso(ts=99))
-        self.assertEqual(r.status, 302)
+        self.assertEqual(r.status, 403)
         self.sin_efectos(r)
 
     def test_03_admin_no_cierra_estado_terminal(self):
         r = self.ejecutar("cerrar_caso", "/casos/cerrar/1",
                           self.usuario("Admin"), self.caso(estado="CERRADO"))
-        self.assertEqual(r.status, 302)
+        self.assertEqual(r.status, 403)
         self.sin_efectos(r, estado="CERRADO")
 
     def test_04_torre_no_cierra_anulado(self):
         r = self.ejecutar("cerrar_caso", "/casos/cerrar/1",
                           self.usuario("Torre Control"), self.caso(estado="ANULADO"))
-        self.assertEqual(r.status, 302)
+        self.assertEqual(r.status, 403)
         self.sin_efectos(r, estado="ANULADO")
 
     def test_05_ts_no_anula_actualmente(self):
         r = self.ejecutar("anular_caso", "/casos/anular/1",
                           self.usuario("Trabajador(a) Social", uid=20), self.caso(),
                           data={"motivo_anulacion": "Motivo ficticio"})
-        self.assertEqual(r.status, 302)
+        self.assertEqual(r.status, 403)
         self.sin_efectos(r)
 
     def test_06_admin_no_anula_sin_motivo(self):
@@ -198,14 +198,12 @@ class TestPostRBACCaracterizacion(unittest.TestCase):
         self.assertEqual(r.status, 403)
         self.sin_efectos(r)
 
-    @unittest.expectedFailure
     def test_12_OBJETIVO_admin_inactivo_no_cierra(self):
         r = self.ejecutar("cerrar_caso", "/casos/cerrar/1",
                           self.usuario("Admin", activo=False), self.caso())
         self.assertEqual(r.status, 403)
         self.sin_efectos(r)
 
-    @unittest.expectedFailure
     def test_13_OBJETIVO_admin_inactivo_no_anula(self):
         r = self.ejecutar("anular_caso", "/casos/anular/1",
                           self.usuario("Admin", activo=False), self.caso(),
@@ -213,14 +211,12 @@ class TestPostRBACCaracterizacion(unittest.TestCase):
         self.assertEqual(r.status, 403)
         self.sin_efectos(r)
 
-    @unittest.expectedFailure
     def test_14_OBJETIVO_ts_ajeno_no_cierra_403(self):
         r = self.ejecutar("cerrar_caso", "/casos/cerrar/1",
                           self.usuario("Trabajador(a) Social", uid=10), self.caso(ts=99))
         self.assertEqual(r.status, 403)
         self.sin_efectos(r)
 
-    @unittest.expectedFailure
     def test_15_OBJETIVO_ts_no_anula_403(self):
         r = self.ejecutar("anular_caso", "/casos/anular/1",
                           self.usuario("Trabajador(a) Social", uid=20), self.caso(),

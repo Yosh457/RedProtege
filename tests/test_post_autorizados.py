@@ -23,9 +23,13 @@ class TestPostAutorizados(unittest.TestCase):
     @staticmethod
     def usuario(rol="Admin", identificador=10):
         return SimpleNamespace(
-            id=identificador, rol=SimpleNamespace(nombre=rol),
-            email="ficticio@example.invalid", nombre_completo="Usuario Ficticio",
+            id=identificador,
+            rol=SimpleNamespace(nombre=rol),
+            email="ficticio@example.invalid",
+            nombre_completo="Usuario Ficticio",
             subrogantes_activos=[],
+            activo=True,
+            is_authenticated=True,
         )
 
     @staticmethod

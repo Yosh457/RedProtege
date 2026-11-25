@@ -29,6 +29,8 @@ class TestCierreActas(unittest.TestCase):
             rol=SimpleNamespace(nombre=rol),
             nombre_completo="Profesional Ficticio",
             email="profesional@example.invalid",
+            activo=True,
+            is_authenticated=True,
         )
 
     @staticmethod
