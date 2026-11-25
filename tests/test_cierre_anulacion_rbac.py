@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from app import create_app
-from tests.test_post_rbac_caracterizacion import TestPostRBACCaracterizacion
+from tests import test_post_rbac_caracterizacion as fixtures_post
 
 
 class TestCierreAnulacionRBAC(unittest.TestCase):
@@ -18,10 +18,10 @@ class TestCierreAnulacionRBAC(unittest.TestCase):
             cls.app = create_app()
         cls.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
 
-    usuario = staticmethod(TestPostRBACCaracterizacion.usuario)
-    caso = staticmethod(TestPostRBACCaracterizacion.caso)
-    ejecutar = TestPostRBACCaracterizacion.ejecutar
-    sin_efectos = TestPostRBACCaracterizacion.sin_efectos
+    usuario = staticmethod(fixtures_post.TestPostRBACCaracterizacion.usuario)
+    caso = staticmethod(fixtures_post.TestPostRBACCaracterizacion.caso)
+    ejecutar = fixtures_post.TestPostRBACCaracterizacion.ejecutar
+    sin_efectos = fixtures_post.TestPostRBACCaracterizacion.sin_efectos
 
     def test_01_admin_inactivo_no_cierra(self):
         r = self.ejecutar('cerrar_caso', '/casos/cerrar/1',
