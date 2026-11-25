@@ -3,9 +3,12 @@ import io
 from datetime import datetime, timedelta, date
 from flask import Blueprint, render_template, abort, request, flash, redirect, url_for, send_file
 from flask_login import login_required, current_user
+from werkzeug.exceptions import HTTPException
 from sqlalchemy import case, or_, func
 from models import db, Caso, Usuario, Rol, AuditoriaCaso, CatalogoEstablecimiento, CatalogoInstitucion, CatalogoRecinto, obtener_hora_chile, CasoGestion
 from utils import check_password_change, registrar_log, enviar_aviso_asignacion, generar_acta_cierre_pdf, enviar_aviso_cierre, enviar_aviso_subrogancia, es_rut_valido, safe_int, enviar_reporte_estadistico_masivo
+from utils.autorizacion import aplicar_filtro_casos, puede_realizar, puede_acceder_caso, puede_exportar_ambito, puede_descargar_acta_historica
+from utils.rutas_actas import resolver_ruta_acta
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -55,94 +58,64 @@ def index():
     search_query = request.args.get('search', '').strip()
     estado_filter = request.args.get('estado', '').strip()
 
-    rol_nombre = current_user.rol.nombre
-    titulo_vista = "Vista Global"
-
-    # =========================================================
-    # A. FILTROS DE SEGURIDAD (RBAC) + SUBROGANCIA
-    # =========================================================
-    filters = []
-
-    # Datos para UI Subrogancia (solo referentes)
-    candidatos_subrogancia = []
-    subrogante_activo = None  # objeto Usuario (el que me está subrogando)
-
-    if rol_nombre in ['Admin', 'Torre Control']:
-        titulo_vista = "Vista Global"
-
-    elif rol_nombre == 'Coordinador EPI':
-        # EPI ve todo, pero en el frontend le ocultaremos las acciones
-        titulo_vista = "Vista Global (Coordinador EPI)"
-
-    elif rol_nombre in ['Referente', 'Visualizador']:
-        ciclos_permitidos = []
-
-        # ✅ FASE 2: Múltiples ciclos propios
-        if current_user.ciclos:
-            ciclos_permitidos.extend([c.id for c in current_user.ciclos])
-            nombres_ciclos = ", ".join([c.nombre for c in current_user.ciclos])
-            titulo_vista = f"Ciclos: {nombres_ciclos}"
-        else:
-            titulo_vista = "Vista Global (Todos los Ciclos)"
-
-
-        # ✅ FASE 2: Múltiples ciclos subrogados
-        if current_user.subrogante_de and current_user.subrogante_de.ciclos:
-            ciclos_sub = [c.id for c in current_user.subrogante_de.ciclos]
-            for c_id in ciclos_sub:
-                if c_id not in ciclos_permitidos:
-                    ciclos_permitidos.append(c_id)
-
-            # Título más informativo
-            nombres_sub = ", ".join([c.nombre for c in current_user.subrogante_de.ciclos])
-            if current_user.ciclos:
-                titulo_vista = f"Ciclos Propios + Subrogando ({nombres_sub})"
-            else:
-                titulo_vista = f"Subrogando ({nombres_sub})"
-
-        # Aplicar filtro por ciclos permitidos si corresponde
-        if ciclos_permitidos:
-            filters.append(Caso.ciclo_vital_id.in_(ciclos_permitidos))
-
-        # UI Subrogancia solo para Referentes
-        if rol_nombre == 'Referente':
-            # a) Lista de candidatos (otros referentes activos, distintos a mí)
-            candidatos_subrogancia = Usuario.query.join(Rol).filter(
-                Rol.nombre == 'Referente',
-                Usuario.activo == True,
-                Usuario.id != current_user.id
-            ).order_by(Usuario.nombre_completo).all()
-
-            # b) Subrogante activo (quién me está subrogando a mí)
-            # OJO: subrogantes_activos es dynamic (AppenderQuery), así que usamos first()
-            subrogante_activo = None
-            if getattr(current_user, "subrogantes_activos", None):
-                try:
-                    subrogante_activo = current_user.subrogantes_activos.first()
-                except Exception:
-                    # Si por alguna razón NO es query y sí es lista, igual funcionará
-                    subrogante_activo = current_user.subrogantes_activos[0] if current_user.subrogantes_activos else None
-
-    elif rol_nombre == 'Trabajador(a) Social':
-        # NUEVO: Filtra por la columna nueva de TS o por la legacy (mientras dure la migración)
-        filters.append(or_(
-            Caso.asignado_ts_id == current_user.id,
-            Caso.asignado_a_usuario_id == current_user.id
-        ))
-        titulo_vista = "Mis Casos Asignados (Gestión)"
-
-    elif rol_nombre == 'Coordinador Ciclo':
-        # NUEVO: Filtra por la columna nueva de Coordinador
-        filters.append(Caso.asignado_coord_id == current_user.id)
-        titulo_vista = "Mis Casos Supervisados"
-
-    else:
-        # Si es Solicitante y trata de entrar a la bandeja, lo pateamos
+    # Política de entrada: rol válido, usuario activo y permiso de listado.
+    if not puede_realizar(current_user, 'casos.listar'):
         abort(403)
 
-    # Query Base (Solo Seguridad)
-    base_query = Caso.query.filter(*filters)
+    rol_nombre = current_user.rol.nombre
+    titulo_vista = 'Vista Global'
 
+    # Variables de presentación del componente de subrogancias.
+    candidatos_subrogancia = []
+    subrogante_activo = None
+
+    if rol_nombre == 'Coordinador EPI':
+        titulo_vista = 'Mis Recintos Autorizados (Coordinación EPI)'
+    elif rol_nombre == 'Coordinador(a) de Urgencia':
+        titulo_vista = 'Mis Recintos Autorizados (Urgencia)'
+    elif rol_nombre == 'Trabajador(a) Social':
+        titulo_vista = 'Mis Casos Asignados (Gestión)'
+    elif rol_nombre == 'Coordinador Ciclo':
+        titulo_vista = 'Mis Casos Supervisados'
+    elif rol_nombre == 'Referente':
+        # Etiqueta solamente: la autorización efectiva se aplica a las consultas.
+        ciclos = list(current_user.ciclos or [])
+        ciclos_titular = []
+        titular = current_user.subrogante_de
+        if (titular is not None and titular.activo is True
+                and titular.rol is not None and titular.rol.nombre == 'Referente'):
+            ciclos_titular = list(titular.ciclos or [])
+
+        if ciclos and ciclos_titular:
+            nombres = ', '.join(c.nombre for c in ciclos_titular)
+            titulo_vista = f'Ciclos Propios + Subrogando ({nombres})'
+        elif ciclos_titular:
+            nombres = ', '.join(c.nombre for c in ciclos_titular)
+            titulo_vista = f'Subrogando ({nombres})'
+        elif ciclos:
+            titulo_vista = 'Ciclos: ' + ', '.join(c.nombre for c in ciclos)
+        else:
+            titulo_vista = 'Sin ciclos asignados'
+
+        # La interfaz de subrogancias sigue siendo exclusiva de referentes.
+        candidatos_subrogancia = Usuario.query.join(Rol).filter(
+            Rol.nombre == 'Referente',
+            Usuario.activo == True,
+            Usuario.id != current_user.id
+        ).order_by(Usuario.nombre_completo).all()
+        if getattr(current_user, 'subrogantes_activos', None):
+            try:
+                subrogante_activo = current_user.subrogantes_activos.first()
+            except (AttributeError, TypeError):
+                activos = current_user.subrogantes_activos
+                subrogante_activo = activos[0] if activos else None
+    elif rol_nombre == 'Visualizador':
+        titulo_vista = 'Vista Global (Solo Lectura)'
+
+    # Solo esta consulta decide el ámbito territorial/ciclos/asignaciones.
+    base_query = aplicar_filtro_casos(
+        current_user, Caso.query, accion='casos.listar', modelo=Caso
+    )
     # =========================================================
     # B. DASHBOARD DATA (KPIs + GRÁFICOS)
     # Ignoran filtros de búsqueda/estado, muestran la "realidad total" del usuario
@@ -154,7 +127,10 @@ def index():
         func.sum(case((Caso.estado == 'PENDIENTE_RESCATAR', 1), else_=0)).label('pendientes'),
         func.sum(case((Caso.estado == 'EN_SEGUIMIENTO', 1), else_=0)).label('seguimiento'),
         func.sum(case((Caso.estado == 'CERRADO', 1), else_=0)).label('cerrados')
-    ).filter(*filters, Caso.estado != 'ANULADO')  # Excluir anulados del conteo general
+    )
+    stats_query = aplicar_filtro_casos(
+        current_user, stats_query, accion='casos.listar', modelo=Caso
+    ).filter(Caso.estado != 'ANULADO')  # Excluir anulados del conteo general
     
     stats_result = stats_query.first()
     
@@ -175,10 +151,13 @@ def index():
     
     # Query agrupada por fecha (versión compatible universalmente: traemos datos y procesamos en python)
     # Filtramos por fecha >= inicio Y filtros de seguridad
-    weekly_raw = db.session.query(Caso.fecha_ingreso).filter(
+    weekly_query = aplicar_filtro_casos(
+        current_user, db.session.query(Caso.fecha_ingreso),
+        accion='casos.listar', modelo=Caso
+    )
+    weekly_raw = weekly_query.filter(
         Caso.fecha_ingreso >= fecha_inicio,
-        Caso.estado != 'ANULADO',  # Excluir anulados del gráfico semanal
-        *filters
+        Caso.estado != 'ANULADO'
     ).all()
 
     # Procesamiento en Python para llenar días vacíos con 0
@@ -212,11 +191,12 @@ def index():
         bar_data.append(weekly_map[d_str])
 
     # 3. Recintos de Notificación (Doughnut) - Agrupar por nombre de recinto
-    notif_query = db.session.query(
-        CatalogoRecinto.nombre,
-        func.count(Caso.id).label('count')
-    ).join(Caso.recinto_notifica)\
-     .filter(*filters, Caso.estado != 'ANULADO')\
+    notif_query = aplicar_filtro_casos(
+        current_user, db.session.query(
+            CatalogoRecinto.nombre,
+            func.count(Caso.id).label('count')
+        ).join(Caso.recinto_notifica), accion='casos.listar', modelo=Caso
+    ).filter(Caso.estado != 'ANULADO')\
      .group_by(CatalogoRecinto.nombre)\
      .order_by(func.count(Caso.id).desc()).all()
 
@@ -247,11 +227,12 @@ def index():
     notif_total = temp_total_notif
 
     # 4. Recintos Inscritos (Barras Horizontales - Top 5)
-    inscritos_query = db.session.query(
-        CatalogoEstablecimiento.nombre,
-        func.count(Caso.id).label('count')
-    ).join(Caso.recinto_inscrito)\
-     .filter(*filters, Caso.estado != 'ANULADO')\
+    inscritos_query = aplicar_filtro_casos(
+        current_user, db.session.query(
+            CatalogoEstablecimiento.nombre,
+            func.count(Caso.id).label('count')
+        ).join(Caso.recinto_inscrito), accion='casos.listar', modelo=Caso
+    ).filter(Caso.estado != 'ANULADO')\
      .group_by(CatalogoEstablecimiento.nombre)\
      .order_by(func.count(Caso.id).desc())\
      .limit(5).all()
@@ -337,42 +318,10 @@ def ver_caso(id):
     rol_nombre = current_user.rol.nombre
 
     # =========================================================
-    # 1. SEGURIDAD DE ACCESO (Permisos)
+    # 1. AUTORIZACION CENTRALIZADA DE LECTURA DEL DETALLE
     # =========================================================
-    permitido = False
-
-    # Roles globales
-    if rol_nombre in ['Admin', 'Torre Control']:
-        permitido = True
-
-    # Referente / Visualizador (por ciclo o subrogancia)
-    elif rol_nombre in ['Referente', 'Visualizador']:
-        # ✅ FASE 2: Comprobar acceso en lista M:N
-        acceso_propio = (
-            not current_user.ciclos or 
-            caso.ciclo_vital_id in [c.id for c in current_user.ciclos]
-        )
-
-        acceso_subrogado = False
-        if current_user.subrogante_de and current_user.subrogante_de.ciclos:
-            acceso_subrogado = caso.ciclo_vital_id in [c.id for c in current_user.subrogante_de.ciclos]
-
-        permitido = acceso_propio or acceso_subrogado
-
-    # Trabajador(a) Social
-    elif rol_nombre == 'Trabajador(a) Social':
-        if (
-            caso.asignado_ts_id == current_user.id or
-            caso.asignado_a_usuario_id == current_user.id  # legacy
-        ):
-            permitido = True
-
-    # Coordinador de Ciclo
-    elif rol_nombre == 'Coordinador Ciclo':
-        if caso.asignado_coord_id == current_user.id:
-            permitido = True
-
-    if not permitido:
+    # La posibilidad de ver el caso NO concede permiso de asignacion.
+    if not puede_acceder_caso(current_user, caso, 'casos.ver'):
         abort(403)
 
     # =========================================================
@@ -381,8 +330,17 @@ def ver_caso(id):
     funcionarios_ts = []
     funcionarios_coord = []
 
-    # 🔥 CAMBIO AQUÍ: Agregamos a 'Torre Control' a la lista de los que pueden asignar
-    puede_asignar = rol_nombre in ['Admin', 'Referente', 'Torre Control']
+    # Fase 1.3-C.5-B: ambas operaciones de asignacion requieren permiso
+    # explicito sobre ESTE caso, su ambito y su estado actual.
+    puede_asignar = (
+        puede_acceder_caso(current_user, caso, 'casos.asignar_ts')
+        and puede_acceder_caso(current_user, caso, 'casos.asignar_coord')
+    )
+
+    # Una solicitud POST no autorizada se deniega antes de consultar usuarios,
+    # ejecutar asignaciones, auditar o enviar correo.
+    if request.method == 'POST' and not puede_asignar:
+        abort(403)
 
     if puede_asignar and caso.estado not in ['CERRADO', 'ANULADO']:
         
@@ -595,12 +553,36 @@ def ver_caso(id):
             print(f"Error asignación dual: {e}")
             flash('Error al procesar la asignación.', 'danger')
 
+
+    # Fase 1.3-C.5-C: mostrar gestionar con la misma politica del endpoint.
+    puede_gestionar_vista = puede_acceder_caso(
+        current_user, caso, 'casos.gestionar'
+    )
+
+    # Fase 1.3-C.5-D: el boton refleja el permiso real de anulacion.
+    puede_anular_vista = puede_acceder_caso(
+        current_user, caso, 'casos.anular'
+    )
+
+    # La ruta de descarga vuelve a validar ambos permisos.
+    puede_descargar_acta_vista = bool(caso.acta_pdf_path) and (
+        puede_acceder_caso(
+            current_user,
+            caso,
+            'casos.descargar_acta'
+        )
+        or puede_descargar_acta_historica(current_user, caso)
+    )
+
     return render_template(
         'casos/ver.html',
         caso=caso,
         funcionarios_ts=funcionarios_ts,
         funcionarios_coord=funcionarios_coord,
-        puede_asignar=puede_asignar
+        puede_asignar=puede_asignar,
+        puede_gestionar_vista=puede_gestionar_vista,
+        puede_anular_vista=puede_anular_vista,
+        puede_descargar_acta_vista=puede_descargar_acta_vista
     )
 
 # --- NUEVA RUTA: GESTIÓN CLÍNICA (FASE 4 P2) ---
@@ -612,33 +594,11 @@ def gestionar_caso(id):
     (o Admin) ingrese la gestión clínica del caso.
     """
     caso = Caso.query.get_or_404(id)
-    rol_nombre = current_user.rol.nombre
 
-    #Si el caso está cerrado, no se permite gestionar.
-    if caso.estado == 'CERRADO':
-        flash('El caso ya está cerrado. No es posible editar la gestión.', 'danger')
-        return redirect(url_for('casos.ver_caso', id=caso.id))
-    
-    # Si el caso está anulado, tampoco se permite gestionar.
-    if caso.estado == 'ANULADO':
-        flash('El caso está anulado. No es posible editar la gestión.', 'danger')
-        return redirect(url_for('casos.ver_caso', id=caso.id))
-
-    # 1. Validar Permisos para GESTIONAR (Más estricto que ver)
-    puede_gestionar = False
-
-    # 🔥 CAMBIO: Agregamos a 'Torre Control' junto al Admin
-    if rol_nombre in ['Admin', 'Torre Control']:
-        puede_gestionar = True
-    elif rol_nombre == 'Trabajador(a) Social':
-        # Validar asignación (Dual: nueva o legacy)
-        if (caso.asignado_ts_id == current_user.id) or (caso.asignado_a_usuario_id == current_user.id):
-            puede_gestionar = True
-    
-    # Referente, Coordinador Ciclo: solo visualizan, no gestionan
-    if not puede_gestionar:
-        flash('No tienes permisos para gestionar este caso.', 'danger')
-        return redirect(url_for('casos.ver_caso', id=caso.id))
+    # Fase 1.3-C.5-C: permiso de gestion por rol, asignacion, recinto y estado.
+    # Se valida antes de consultar catalogos o alterar datos clinicos.
+    if not puede_acceder_caso(current_user, caso, 'casos.gestionar'):
+        abort(403)
 
     # Cargar catálogos necesarios para el formulario de gestión
     establecimientos = CatalogoEstablecimiento.query.filter_by(activo=True).order_by(CatalogoEstablecimiento.nombre).all()
@@ -895,31 +855,10 @@ def gestionar_caso(id):
 @login_required
 def cerrar_caso(id):
     caso = Caso.query.get_or_404(id)
-    rol_nombre = current_user.rol.nombre
-
-    # 1. Validar Permisos (Admin o Trabajador Social Asignado)
-    puede_cerrar = False
-    
-    # 🔥 CAMBIO: Agregamos a 'Torre Control' junto al Admin
-    if rol_nombre in ['Admin', 'Torre Control']:
-        puede_cerrar = True
-    elif rol_nombre == 'Trabajador(a) Social':
-        # Validar asignación dual (nuevo o legacy)
-        if (caso.asignado_ts_id == current_user.id) or (caso.asignado_a_usuario_id == current_user.id):
-            puede_cerrar = True
-    
-    # Coord Ciclo -> NO cierra caso, solo visualiza
-    if not puede_cerrar:
-        flash('No tienes permisos para cerrar este caso.', 'danger')
-        return redirect(url_for('casos.ver_caso', id=caso.id))
-
-    if caso.estado == 'CERRADO':
-        flash('El caso ya se encuentra cerrado.', 'warning')
-        return redirect(url_for('casos.ver_caso', id=caso.id))
-    
-    if caso.estado == 'ANULADO':
-        flash('El caso está anulado y no puede cerrarse.', 'warning')
-        return redirect(url_for('casos.ver_caso', id=caso.id))
+    # Fase 1.3-C.5-D: rol, usuario activo, asignacion y estado del caso.
+    # Rechazar antes de cambiar estado, auditar, generar PDF o enviar correos.
+    if not puede_acceder_caso(current_user, caso, 'casos.cerrar'):
+        abort(403)
 
     try:
         # 2. Actualizar Estado en BD (Primer Commit)
@@ -983,22 +922,9 @@ def anular_caso(id):
     # Anula lógicamente un caso sin borrarlo físicamente de la base de datos.
     # Se usa para duplicados, ingresos erróneos o registros creados por accidente.
     caso = Caso.query.get_or_404(id)
-    rol_nombre = current_user.rol.nombre
-
-    # Solo Admin y Torre Control pueden anular
-    if rol_nombre not in ['Admin', 'Torre Control']:
-        flash('No tienes permisos para anular casos.', 'danger')
-        return redirect(url_for('casos.ver_caso', id=caso.id))
-    
-    # Evitamos anular dos veces el mismo caso.
-    if caso.estado == 'ANULADO':
-        flash('El caso ya se encuentra anulado.', 'warning')
-        return redirect(url_for('casos.ver_caso', id=caso.id))
-    
-    # Política recomendada: no permitir anular un caso ya cerrado para no mezclar flujos.
-    if caso.estado == 'CERRADO':
-        flash('Un caso cerrado no puede anularse.', 'warning')
-        return redirect(url_for('casos.ver_caso', id=caso.id))
+    # Fase 1.3-C.5-D: validar antes de examinar motivo o mutar el caso.
+    if not puede_acceder_caso(current_user, caso, 'casos.anular'):
+        abort(403)
 
     motivo = request.form.get('motivo_anulacion', '').strip()
     if not motivo:
@@ -1053,49 +979,15 @@ def descargar_acta(id):
     rol_nombre = current_user.rol.nombre
 
     # =========================================================
-    # 1. VALIDACIÓN DE PERMISOS
+    # 1. AUTORIZACIÓN CENTRALIZADA DEL DOCUMENTO
     # =========================================================
-    permitido = False
-
-    # --- Roles Globales ---
-    if rol_nombre in ['Admin', 'Torre Control', 'Coordinador EPI']:
-        permitido = True
-
-    # --- Referente / Visualizador (por ciclo + subrogancia) ---
-    elif rol_nombre in ['Referente', 'Visualizador']:
-        # ✅ FASE 2: Comprobar acceso en lista M:N
-        acceso_propio = (
-            not current_user.ciclos or
-            caso.ciclo_vital_id in [c.id for c in current_user.ciclos]
-        )
-
-        acceso_subrogado = False
-        if current_user.subrogante_de and current_user.subrogante_de.ciclos:
-            if caso.ciclo_vital_id in [c.id for c in current_user.subrogante_de.ciclos]:
-                acceso_subrogado = True
-
-        if acceso_propio or acceso_subrogado:
-            permitido = True
-
-    # --- Trabajador(a) Social ---
-    elif rol_nombre == 'Trabajador(a) Social':
-        es_asignado = (
-            caso.asignado_ts_id == current_user.id or
-            caso.asignado_a_usuario_id == current_user.id  # legacy
-        )
-        es_quien_cerro = (caso.usuario_cierre_id == current_user.id)
-
-        if es_asignado or es_quien_cerro:
-            permitido = True
-
-    # --- Coordinador de Ciclo ---
-    elif rol_nombre == 'Coordinador Ciclo':
-        if caso.asignado_coord_id == current_user.id:
-            permitido = True
-
-    if not permitido:
-        flash("No tienes permisos para descargar este documento.", "danger")
-        return redirect(url_for('casos.index'))
+    # La excepción histórica se limita al TS que cerró un caso CERRADO.
+    # Una denegación devuelve 403 antes de resolver la ruta física o servir PDF.
+    if not (
+        puede_acceder_caso(current_user, caso, 'casos.descargar_acta')
+        or puede_descargar_acta_historica(current_user, caso)
+    ):
+        abort(403)
 
     # =========================================================
     # 2. VALIDAR EXISTENCIA DE ACTA EN BD
@@ -1109,25 +1001,13 @@ def descargar_acta(id):
         # 3. CONSTRUCCIÓN Y SEGURIDAD DE RUTA (PATH TRAVERSAL)
         # =====================================================
 
-        # Base del proyecto (un nivel arriba de blueprints/)
+        # La funcion de rutas normaliza separadores, rechaza escapes y
+        # resuelve enlaces simbolicos antes de entregar el archivo.
         BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-
-        # Normalizar ruta almacenada en BD
-        ruta_relativa = caso.acta_pdf_path.replace('\\', '/').lstrip('/')
-
-        # Resolver ruta absoluta final
-        path_absoluto = os.path.abspath(os.path.join(BASE_DIR, ruta_relativa))
-
-        # Carpeta autorizada (jaula)
-        carpeta_actas = os.path.abspath(os.path.join(BASE_DIR, 'uploads', 'actas'))
-        carpeta_con_sep = os.path.join(carpeta_actas, '')  # asegura separador final
-
-        # Bloqueo de Path Traversal
-        if not path_absoluto.startswith(carpeta_con_sep):
-            registrar_log(
-                "Seguridad",
-                f"ALERTA: Intento de Path Traversal por {current_user.email}. Path: {path_absoluto}"
-            )
+        try:
+            path_absoluto = resolver_ruta_acta(BASE_DIR, caso.acta_pdf_path)
+        except ValueError:
+            registrar_log('Seguridad', f'Acta con ruta no autorizada: caso={caso.id}, usuario={current_user.id}')
             abort(403)
 
         # =====================================================
@@ -1162,6 +1042,8 @@ def descargar_acta(id):
             download_name=nombre_descarga
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error sirviendo archivo: {e}")
         flash('Error interno al intentar descargar el archivo.', 'danger')
@@ -1179,50 +1061,14 @@ def exportar_excel():
     search_query = request.args.get('search', '').strip()
     estado_filter = request.args.get('estado', '').strip()
 
-    rol_nombre = current_user.rol.nombre
-    
-    # 2. Construir Filtros de Seguridad (Base Query)
-    filters = []
-
-    # A) Acceso Global
-    if rol_nombre in ['Admin', 'Torre Control', 'Coordinador EPI']:
-        pass 
-        
-    # B) Acceso por Ciclo (Referente / Visualizador)
-    elif rol_nombre in ['Referente', 'Visualizador']:
-        ciclos_permitidos = []
-
-        # ✅ FASE 2: Múltiples ciclos en exportación
-        if current_user.ciclos:
-            ciclos_permitidos.extend([c.id for c in current_user.ciclos])
-
-        if current_user.subrogante_de and current_user.subrogante_de.ciclos:
-            ciclos_sub = [c.id for c in current_user.subrogante_de.ciclos]
-            for c_id in ciclos_sub:
-                if c_id not in ciclos_permitidos:
-                    ciclos_permitidos.append(c_id)
-
-        if ciclos_permitidos:
-            filters.append(Caso.ciclo_vital_id.in_(ciclos_permitidos))
-        else:
-            pass # Si no tiene ciclo, asume global o vacío según regla de negocio
-            
-    # C) Acceso TS (Gestor) - Migración Segura
-    elif rol_nombre == 'Trabajador(a) Social':
-        filters.append(or_(
-            Caso.asignado_ts_id == current_user.id,
-            Caso.asignado_a_usuario_id == current_user.id
-        ))
-        
-    # D) Acceso Coordinador Ciclo
-    elif rol_nombre == 'Coordinador Ciclo':
-        filters.append(Caso.asignado_coord_id == current_user.id)
-        
-    else:
+    # Fase 1.3-C.4-B: validar permiso y alcance ANTES de crear el Excel.
+    if not puede_exportar_ambito(current_user):
         abort(403)
 
-    # Iniciar query segura
-    query = Caso.query.filter(*filters)
+    # Misma politica RBAC que la bandeja: no inventar filtros por rol.
+    query = aplicar_filtro_casos(
+        current_user, Caso.query, 'casos.exportar', modelo=Caso
+    )
 
     # 3. Aplicar Filtros de Usuario (Búsqueda y Estado)
     if search_query:

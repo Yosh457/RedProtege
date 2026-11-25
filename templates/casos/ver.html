@@ -446,22 +446,9 @@
             <div class="bg-white p-6 rounded-xl shadow border-t-4 border-blue-600">
                 <h3 class="text-lg font-bold text-gray-800 mb-4">Gestión del Caso</h3>
 
-                {% set rol = (current_user.rol.nombre if current_user.rol else '') %}
+                {# Permisos calculados por el servidor, no por el rol en Jinja. #}
                 {% set es_cerrado = (caso.estado == 'CERRADO') %}
                 {% set es_anulado = (caso.estado == 'ANULADO') %}
-                
-                {# PERMISOS PARA BOTÓN "INGRESAR GESTIÓN" #}
-                {# Admin siempre puede. Trabajador Social solo si es el asignado. #}
-                {% set puede_gestionar = False %}
-                
-                {# 🔥 CAMBIO: Evaluamos Admin y Torre Control #}
-                {% if rol in ['Admin', 'Torre Control'] %}
-                    {% set puede_gestionar = True %}
-                {% elif rol == 'Trabajador(a) Social' %}
-                    {% if (caso.asignado_ts_id == current_user.id) or (caso.asignado_a_usuario_id == current_user.id) %}
-                        {% set puede_gestionar = True %}
-                    {% endif %}
-                {% endif %}
 
                 {% if es_cerrado %}
                     {# CASO CERRADO: Aviso y Descarga #}
@@ -470,7 +457,7 @@
                         <p class="text-xs mt-1">Este caso ha sido finalizado y no admite más ediciones.</p>
                     </div>
 
-                    {% if caso.acta_pdf_path %}
+                    {% if puede_descargar_acta_vista %}
                         <div class="text-center">
                             <a href="{{ url_for('casos.descargar_acta', id=caso.id) }}" target="_blank" class="btn btn-secondary w-full flex items-center justify-center gap-2">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -487,7 +474,7 @@
                         <p class="text-xs mt-1">Este caso fue marcado como duplicado o ingreso erróneo y no admite nuevas gestiones.</p>
                     </div>
 
-                {% elif puede_gestionar %}
+                {% elif puede_gestionar_vista %}
                     <div class="bg-blue-50 border border-blue-100 rounded-lg p-4 text-sm text-blue-800 mb-4">
                         Puedes gestionar este caso. Los datos del formulario son inmutables.
                     </div>
@@ -506,13 +493,13 @@
                 {% else %}
                     <div class="bg-yellow-50 p-4 rounded text-yellow-800 text-sm text-center">
                         <p>Este caso es de solo lectura para tu perfil.</p>
-                        {% if rol == 'Trabajador(a) Social' %}
+                        {% if current_user.rol.nombre == 'Trabajador(a) Social' %}
                             <p class="mt-1 text-xs">Solo el Trabajador Social asignado puede gestionarlo.</p>
                         {% endif %}
                     </div>
                 {% endif %}
 
-                {% if current_user.rol.nombre in ['Admin', 'Torre Control'] and caso.estado not in ['CERRADO', 'ANULADO'] %}
+                {% if puede_anular_vista %}
                     <div class="mt-6 pt-5 border-t border-gray-200">
                         <button
                             type="button"
