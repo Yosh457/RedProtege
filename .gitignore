@@ -1,9 +1,70 @@
+# Entornos Virtuales
 venv/
+.venv/
+env/
+ENV/
+
+# Variables de Entorno y Credenciales
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
 __pycache__/
 *.py[cod]
-.env
-.DS_Store
+*.egg-info/
+build/
+dist/
 
-# Ignorar archivos generados en uploads pero mantener la carpeta
+# Pruebas y Análisis
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# Archivos Temporales y Respaldos Locales
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+*.candidate
+*.pre_*
+
+# Sistemas Operativos
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE y Editores
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Frontend y Dependencias
+node_modules/
+frontend/node_modules/
+
+# Archivos Locales de Flask
+instance/
+.flaskenv
+
+# Archivos Subidos - Actas
 uploads/actas/*
 !uploads/actas/.gitkeep
+
+# Almacenamiento y Respaldos
+storage/
+backups/
+
+# Bases de Datos y Archivos Comprimidos
+*.sqlite
+*.sqlite3
+*.db
+*.sql.gz
+*.zip
