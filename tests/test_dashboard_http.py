@@ -222,8 +222,11 @@ class TestDashboardHTTP(unittest.TestCase):
     def test_solicitante_recibe_403(self):
         self.assertEqual(self._get(70).status_code, 403)
 
-    def test_usuario_inactivo_recibe_403(self):
-        self.assertEqual(self._get(71).status_code, 403)
+    def test_usuario_inactivo_redirige_login(self):
+        respuesta = self._get(71)
+
+        self.assertEqual(respuesta.status_code, 302)
+        self.assertIn('/login-prueba', respuesta.headers['Location'])
 
     def test_anonimo_requiere_login(self):
         respuesta = self._get()

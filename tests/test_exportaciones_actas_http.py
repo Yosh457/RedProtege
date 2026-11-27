@@ -195,7 +195,8 @@ class TestExportacionesActasHTTP(unittest.TestCase):
 
     def test_15_OBJETIVO_usuario_inactivo_no_exporta(self):
         r, _ = self.peticion('/casos/exportar', 20)
-        self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('login-test-exportaciones', r.headers['Location'])
 
     def test_16_OBJETIVO_epi_no_descarga_acta_de_recinto_ajeno(self):
         r, servido = self.peticion('/casos/acta/2', 17, simular_pdf=True)

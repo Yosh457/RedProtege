@@ -9,7 +9,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from app import create_app
-from blueprints.auth import es_password_segura, obtener_ruta_redireccion
+from blueprints.auth import obtener_ruta_redireccion
+from utils.security import password_valida
 
 class TestAccesoAnonimo(unittest.TestCase):
     @classmethod
@@ -43,17 +44,22 @@ class TestAccesoAnonimo(unittest.TestCase):
                 response = self.client.get(url, follow_redirects=False)
                 self.assertEqual(response.status_code, 405)
 
-    def test_el_logout_actual_acepta_get(self):
-        # Caracterización de comportamiento legado, NO una aprobación de seguridad.
-        rule = next(r for r in self.app.url_map.iter_rules() if r.endpoint == "auth.logout")
-        self.assertIn("GET", rule.methods)
+    def test_logout_solo_admite_post(self):
+        rule = next(
+            r for r in self.app.url_map.iter_rules()
+            if r.endpoint == "auth.logout"
+        )
+
+        self.assertIn("POST", rule.methods)
+        self.assertNotIn("GET", rule.methods)
 
 class TestAutenticacionPura(unittest.TestCase):
     def test_validacion_actual_de_contrasenas(self):
-        self.assertTrue(es_password_segura("ClaveSegura2026"))
-        self.assertFalse(es_password_segura("corta1A"))
-        self.assertFalse(es_password_segura("sinmayusculas123"))
-        self.assertFalse(es_password_segura("SinNumeros"))
+        self.assertTrue(password_valida("ClaveSegura2026", "ClaveSegura2026"))
+        self.assertFalse(password_valida("corta1A", "corta1A"))
+        self.assertFalse(password_valida("sinmayusculas123", "sinmayusculas123"))
+        self.assertFalse(password_valida("SinNumeros", "SinNumeros"))
+        self.assertFalse(password_valida("ClaveSegura2026", "OtraClave2026"))
 
     def test_redireccion_inicial_por_rol(self):
         app = create_app_para_rutas()

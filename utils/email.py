@@ -1,4 +1,5 @@
 import os
+import ssl
 import smtplib
 from datetime import datetime
 from email.mime.text import MIMEText
@@ -6,6 +7,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 from email.utils import formataddr
 from flask import url_for, current_app
+from urllib.parse import urlsplit
+from html import escape
 
 # --- PLANTILLA BASE HTML PARA CORREOS (DISEÑO UNIFICADO) ---
 def get_email_template(titulo, contenido):
@@ -120,8 +123,11 @@ def enviar_correo_generico(destinatarios, asunto, cuerpo_html, adjunto_path=None
     recipients = list(dict.fromkeys([r for r in recipients if r]))
 
     try:
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
-            server.starttls()
+        # Establecer un tiempo máximo de espera para la conexión SMTP.
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
+
+            # Establecer una conexión TLS con validación de certificados.
+            server.starttls(context=ssl.create_default_context())
             server.login(remitente, contrasena)
 
             # MODERNO + CONTROL:
@@ -142,20 +148,76 @@ def enviar_correo_generico(destinatarios, asunto, cuerpo_html, adjunto_path=None
 
 # --- FUNCIONES ESPECÍFICAS DE NOTIFICACIÓN ---
 
+# --- CONSTRUCCIÓN SEGURA DE ENLACES ---
+def _url_publica(endpoint, **values):
+    """Construye enlaces desde el origen configurado; no usa Host del request."""
+    base = current_app.config.get('REDPROTEGE_BASE_URL', '').rstrip('/')
+    parsed = urlsplit(base)
+
+    # Validar que la URL base corresponda a un origen HTTP(S) sin credenciales ni rutas.
+    if (
+        parsed.scheme not in ('http', 'https')
+        or not parsed.netloc
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in ('', '/')
+    ):
+        raise RuntimeError('REDPROTEGE_BASE_URL debe ser un origen HTTP(S) confiable')
+
+    # En producción, los enlaces de activación y recuperación deben usar HTTPS.
+    if current_app.config.get('APP_ENV') == 'production' and parsed.scheme != 'https':
+        raise RuntimeError('REDPROTEGE_BASE_URL debe usar HTTPS en producción')
+
+    return base + url_for(endpoint, **values)
+
 def enviar_correo_reseteo(usuario, token):
-    url = url_for('auth.resetear_clave', token=token, _external=True)
+    """Envía un enlace de recuperación de contraseña de un solo uso."""
+    try:
+        enlace = _url_publica('auth.resetear_clave', token=token)
+    except RuntimeError:
+        current_app.logger.exception('URL pública de recuperación incorrecta')
+        return False
+
+    # Escapar los valores dinámicos antes de incorporarlos al HTML.
     contenido = f"""
-        <p>Hola <strong>{usuario.nombre_completo}</strong>,</p>
+        <p>Hola <strong>{escape(usuario.nombre_completo)}</strong>,</p>
         <p>Hemos recibido una solicitud para restablecer tu contraseña.</p>
         <div style="text-align: center; margin: 30px 0;">
-            <a href="{url}" style="background-color: #275c80; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+            <a href="{escape(enlace, quote=True)}" style="background-color: #275c80; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold;">
                 Restablecer Contraseña
             </a>
         </div>
-        <p style="font-size: 13px; color: #666;">El enlace expirará en 1 hora.</p>
+        <p style="font-size: 13px; color: #666;">El enlace expirará en 1 hora y solo puede utilizarse una vez.</p>
     """
-    html = get_email_template("Recuperación de Contraseña", contenido)
-    enviar_correo_generico(usuario.email, 'Restablecimiento de Contraseña - RedProtege', html)
+    html = get_email_template('Recuperación de contraseña', contenido)
+    return enviar_correo_generico(usuario.email, 'Restablecimiento de contraseña - RedProtege', html)
+
+def enviar_activacion_usuario(usuario, token):
+    """Envía un enlace de activación para establecer la contraseña inicial."""
+    try:
+        enlace = _url_publica('auth.activar_cuenta', token=token)
+    except RuntimeError:
+        current_app.logger.exception('URL pública de activación incorrecta')
+        return False
+
+    # Mantener el diseño institucional sin enviar contraseñas por correo.
+    contenido = f"""
+        <p>Hola <strong>{escape(usuario.nombre_completo)}</strong>,</p>
+        <p>Bienvenido al Sistema <strong>RedProtege</strong>. Se ha creado tu cuenta de acceso.</p>
+        <p>Para activar tu cuenta, debes establecer tu propia contraseña.</p>
+
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{escape(enlace, quote=True)}" style="background-color: #275c80; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+                Activar Cuenta
+            </a>
+        </div>
+
+        <p style="font-size: 13px; color: #666;">El enlace expirará en 24 horas y solo puede utilizarse una vez.</p>
+    """
+    html = get_email_template('Activa tu cuenta', contenido)
+    return enviar_correo_generico(usuario.email, 'Activa tu cuenta - RedProtege', html)
 
 def enviar_aviso_asignacion(funcionario, caso, asignador):
     url = url_for('casos.ver_caso', id=caso.id, _external=True)
@@ -279,33 +341,6 @@ def enviar_aviso_cierre(caso, funcionario_cierre):
     """
     html = get_email_template(f"Caso Cerrado #{caso.folio_atencion}", contenido)
     return enviar_correo_generico(destinatarios, f"Caso Cerrado #{caso.folio_atencion}", html)
-
-def enviar_credenciales_nuevo_usuario(usuario, password_texto_plano):
-    """
-    Envía correo de bienvenida con credenciales al nuevo usuario.
-    """
-    url_login = url_for('auth.login', _external=True)
-    
-    contenido = f"""
-        <p>Hola <strong>{usuario.nombre_completo}</strong>,</p>
-        <p>Bienvenido al Sistema <strong>RedProtege</strong>. Se ha creado tu cuenta de acceso.</p>
-        
-        <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #275c80; margin: 20px 0; border-radius: 4px;">
-            <p style="margin: 5px 0;"><strong>Usuario (Email):</strong> {usuario.email}</p>
-            <p style="margin: 5px 0;"><strong>Contraseña Temporal:</strong> {password_texto_plano}</p>
-        </div>
-
-        <div style="text-align: center; margin: 30px 0;">
-            <a href="{url_login}" style="background-color: #275c80; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold;">
-                Ingresar al Sistema
-            </a>
-        </div>
-        
-        <p style="color: #d9534f; font-size: 13px;"><strong>Importante:</strong> Por seguridad, el sistema te solicitará cambiar esta contraseña al iniciar sesión por primera vez.</p>
-    """
-    
-    html = get_email_template("Bienvenido a RedProtege", contenido)
-    return enviar_correo_generico(usuario.email, "Bienvenido - Credenciales de Acceso", html)
 
 def enviar_reporte_estadistico_masivo(destinatarios_bcc, data):
     """

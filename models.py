@@ -82,12 +82,17 @@ class Usuario(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     nombre_completo = db.Column(db.String(255), nullable=False)
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
-    password_hash = db.Column(db.String(255), nullable=False)
+    password_hash = db.Column(db.String(255), nullable=True)
     activo = db.Column(db.Boolean, default=True)
     fecha_creacion = db.Column(db.DateTime, default=obtener_hora_chile)
     
     cambio_clave_requerido = db.Column(db.Boolean, default=False, nullable=False)
-    reset_token = db.Column(db.String(32), nullable=True)
+    # Solo hashes SHA-256 de tokens, nunca enlaces en claro.
+    reset_token = db.Column(db.String(64), nullable=True, unique=True)
+    activacion_pendiente = db.Column(db.Boolean, nullable=False, default=False)
+    activacion_token_hash = db.Column(db.String(64), nullable=True, unique=True)
+    activacion_token_expiracion = db.Column(db.DateTime, nullable=True)
+    sesion_version = db.Column(db.Integer, nullable=False, default=1, server_default='1')
     reset_token_expiracion = db.Column(db.DateTime, nullable=True)
 
     rol_id = db.Column(db.Integer, db.ForeignKey('roles.id'), index=True)
@@ -112,11 +117,18 @@ class Usuario(db.Model, UserMixin):
     # 'subrogantes_activos': (Backref) Accede a quiénes me están reemplazando a mí.
     subrogante_de = db.relationship('Usuario', remote_side=[id], backref=db.backref('subrogantes_activos', lazy='dynamic'), lazy='joined')
 
+    @property
+    def is_active(self):
+        return bool(self.activo) and not bool(self.activacion_pendiente)
+
     def set_password(self, password):
+        tenia_password = self.password_hash is not None
         self.password_hash = generate_password_hash(password)
+        if tenia_password:
+            self.sesion_version = (self.sesion_version or 1) + 1
 
     def check_password(self, password):
-        return check_password_hash(self.password_hash, password)
+        return bool(self.password_hash) and bool(password) and check_password_hash(self.password_hash, password)
 
 class Log(db.Model):
     __tablename__ = 'logs'

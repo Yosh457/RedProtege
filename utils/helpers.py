@@ -1,3 +1,4 @@
+# utils/helpers.py
 from datetime import datetime
 import pytz
 from flask_login import current_user
@@ -9,23 +10,31 @@ def obtener_hora_chile():
     cl_tz = pytz.timezone('America/Santiago')
     return datetime.now(cl_tz)
 
-def registrar_log(accion, detalles, usuario=None):
+def registrar_log(accion, detalles, usuario=None, commit=True):
     """
     Registra un evento en la tabla 'logs' del sistema.
-    Usa Lazy Import para evitar ciclos con models.py
+    Usa Lazy Import para evitar ciclos con models.py.
+
+    - commit=True: registra y confirma el evento en la base de datos.
+    - commit=False: participa en la transacción de la función llamadora.
+    - Retorna True si la operación se realiza correctamente.
+    - Retorna False ante un error cuando commit=True.
+    - Si commit=False, propaga el error para que lo gestione la función llamadora.
     """
     from models import db, Log  # ✅ Importación diferida para evitar ciclos
+    from flask import current_app, has_request_context
 
     try:
         user_id = None
         user_nombre = "Sistema/Anónimo"
 
         # Si pasamos un usuario explícito (ej: login exitoso)
-        if usuario:
+        if usuario is not None:
             user_id = usuario.id
             user_nombre = usuario.nombre_completo
-        # Si no, intentamos sacar del current_user
-        elif current_user and current_user.is_authenticated:
+
+        # Si no, intentamos sacar del current_user dentro de una solicitud.
+        elif has_request_context() and current_user.is_authenticated:
             user_id = current_user.id
             user_nombre = current_user.nombre_completo
 
@@ -36,11 +45,28 @@ def registrar_log(accion, detalles, usuario=None):
             detalles=detalles,
             timestamp=obtener_hora_chile()
         )
+
         db.session.add(nuevo_log)
-        db.session.commit()
-    except Exception as e:
-        # En caso de error de DB, lo imprimimos en consola para no romper el flujo
-        print(f"Error al registrar log: {e}")
+
+        # Confirmar la transacción solo cuando se solicite explícitamente.
+        # Con commit=False, la función llamadora controla el commit o rollback.
+        if commit:
+            db.session.commit()
+
+        return True
+
+    except Exception:
+        # Si pertenece a una transacción externa, propagar el error.
+        if not commit:
+            raise
+
+        # Revertir la transacción para mantener operativa la sesión de la BD.
+        db.session.rollback()
+
+        # Registrar el error sin interrumpir el flujo normal del sistema.
+        current_app.logger.exception('Error registrando auditoría: %s', accion)
+
+        return False
 
 def es_rut_valido(rut: str) -> bool:
     """

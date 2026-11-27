@@ -1,9 +1,13 @@
+
 # app.py
 import os
 from datetime import timedelta
 
 from dotenv import load_dotenv
-from flask import Flask, redirect, url_for, flash, render_template, request
+from flask import (
+    Flask, redirect, url_for, flash, render_template, request,
+    make_response,
+)
 from flask_wtf.csrf import CSRFError
 from sqlalchemy.engine import URL
 
@@ -31,6 +35,8 @@ def create_app():
         raise RuntimeError(
             "APP_ENV debe ser development, testing o production."
         )
+
+    app.config['APP_ENV'] = app_env
 
     debug_solicitado = os.getenv('FLASK_DEBUG', '0') == '1'
     debug_habilitado = (
@@ -69,6 +75,10 @@ def create_app():
     # CSRF global: Flask-WTF protege las solicitudes aplicables.
     app.config['WTF_CSRF_ENABLED'] = True
     app.config['WTF_CSRF_TIME_LIMIT'] = 3600
+
+    # Tiempo maximo de inactividad permitido para sesiones autenticadas.
+    # La restriccion se aplica mediante la verificacion de sesion.
+    app.config['SESION_INACTIVIDAD_SEGUNDOS'] = 10 * 60
 
     # -------------------------------------------------------------------------
     # CONEXION A BASE DE DATOS MYSQL
@@ -179,11 +189,44 @@ def create_app():
     app.register_blueprint(solicitudes_bp)
 
     # -------------------------------------------------------------------------
+    # CONTROLES DE SEGURIDAD PREVIOS A LAS SOLICITUDES
+    # -------------------------------------------------------------------------
+    from utils.decorators import verificar_restricciones_sesion
+    from utils.rate_limit import limitar_autenticacion
+
+    # Verificar las restricciones de sesion antes de procesar solicitudes.
+    app.before_request(verificar_restricciones_sesion)
+
+    # Limitar las solicitudes de autenticacion para prevenir abusos.
+    app.before_request(limitar_autenticacion)
+
+    # -------------------------------------------------------------------------
     # RUTA PRINCIPAL
     # -------------------------------------------------------------------------
     @app.route('/')
     def index():
         return redirect(url_for('auth.login'))
+
+    # -------------------------------------------------------------------------
+    # MANEJO DE ERRORES POR LIMITE DE SOLICITUDES
+    # -------------------------------------------------------------------------
+    @app.errorhandler(429)
+    def muchas_solicitudes(error):
+        """Gestiona las solicitudes rechazadas por el limite de frecuencia."""
+
+        # Utilizar el tiempo de espera indicado por el error.
+        # Si no esta disponible, establecer una espera de 60 segundos.
+        espera = getattr(error, 'retry_after', None) or 60
+
+        respuesta = make_response(
+            'Demasiadas solicitudes. Intenta nuevamente más tarde.',
+            429,
+        )
+
+        # Informar al cliente cuantos segundos debe esperar.
+        respuesta.headers['Retry-After'] = str(int(espera))
+
+        return respuesta
 
     # -------------------------------------------------------------------------
     # MANEJO DE ERRORES CSRF
@@ -273,7 +316,8 @@ def load_user(user_id):
     usuario = db.session.get(Usuario, identificador)
 
     # Una cuenta desactivada no debe conservar acceso por una sesion previa.
-    if usuario is None or usuario.activo is not True:
+    # Utilizar la propiedad is_active para validar el estado de la cuenta.
+    if usuario is None or not usuario.is_active:
         return None
 
     return usuario

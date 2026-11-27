@@ -202,8 +202,11 @@ class TestDetalleHTTP(unittest.TestCase):
     def test_17_OBJETIVO_referente_sin_ciclos_no_es_global(self):
         self._denegado(14, 1)
 
-    def test_18_OBJETIVO_usuario_inactivo_denegado(self):
-        self._denegado(20, 1)
+    def test_18_OBJETIVO_usuario_inactivo_redirige_login(self):
+        respuesta = self._get(20, 1)
+
+        self.assertEqual(respuesta.status_code, 302)
+        self.assertIn('/login-detalle-prueba', respuesta.headers['Location'])
 
     def test_19_epi_sin_recintos_no_puede_ver_actualmente(self):
         self._denegado(21, 1)
